@@ -1,0 +1,2635 @@
+---
+title: "Analyse rapatriement bagages std"
+author: "Yao Gnonsou"
+date: "`r format(Sys.time(),'%d %B,%Y')`"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+---
+
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, message = F, warning = F)
+
+library(knitr)
+library(rmarkdown)
+library(markdown)
+library(kableExtra)
+library(DT)
+```
+
+
+## I **Analyse Hebdomadaire** 
+
+Afin d'éffectuer une analyse hebdomadaire, nous allons faire un recapitulatif du fichiers ixop par rapport à différents points de vues.
+Les points de vue seron traités et restitués comme suit: 
+
+- Details par Agents.
+
+- Details par plages horaires.
+
+- Details par typologies bagages.
+
+- Details par typologies de vols.
+
+```{r pressure, echo=FALSE}
+###Importation de données
+
+
+rm(list=ls()) ##pour effacer tous les objets en mémoire
+
+data_voltigeurs <- data.frame(read.csv2(file.choose(), header = TRUE ,sep = ";", dec = ",",na.strings = ""))
+data_new <- data.frame(read.csv2(file.choose(), header = TRUE ,sep = ";", dec = ",",na.strings = ""))
+
+
+############ Fonction globale de traitement de données
+
+##Netoyage des donées 
+Clean.data <- function(x)
+{
+  for(i in 1 : length(x$Taches.assigne))
+      {
+          if(is.na(x$Debut.dechargement[i]) == TRUE  & is.na(x$Depart.zec[i]) == TRUE & is.na(x$Arrive.aux.trieurs[i]) == TRUE & is.na(x$Dechargement.triage[i]) == TRUE & is.na(x$Zone.Tampon[i]) == TRUE)
+          { 
+            x[i,] <- NA
+          }
+    
+          if(is.na(x$Identifiant[i]) == TRUE  & is.na(x$Nom[i]) == TRUE & is.na(x$Prenom[i]) == TRUE)
+          { 
+            x[i,] <- NA
+          }
+      
+      }
+  return(x[!is.na(x$Taches.assigne),])
+}
+
+##Renomer les variables 
+Rename.data <- function(x)
+{
+  library(dplyr)
+  x <- rename(x,
+                   Arrv.reel.avion = AA,
+                   Arrv.theor.avion = HA,
+                   Taches.assigne =Temps.assigne,
+                   Taches.accepte = Temps.accepte,
+                   Arrive.zec = Arr.zec,
+                   Arrv.avion.decla.agents = Vol.arrive,
+                   Debut.dechargement = DD,
+                   Chargement.bagages = Chargement,
+                   Arrive.aux.trieurs = Arr.a.triage,
+                   Dechargement.triage = Dechargement,
+                   Type.de.Tache = Type.Tache,
+                   Quantite.prevu = Quantite.Prev,
+                   Quantite.reelle = Quantite,
+                   Trieurs = Zone)
+  
+  return(x)
+}
+
+##Definition des type de variables 
+retype.data <- function(x)
+{
+  
+      x$Identifiant <- as.character(x$Identifiant) 
+      
+      x$Nom <- as.character(x$Nom)
+      
+      x$Prenom <- as.character(x$Prenom)
+      
+      library(lubridate) # gestion des heures et date
+      
+      x$Date  <- dmy(x$Date) # fonction de lubricate ici on defini un nouveau type a la variable data
+      
+      library(hms)
+      library(dplyr)
+
+
+      x <- mutate(x,
+                   Debut.vacation = as.hms(as.POSIXct(x$Vacation, format = "%H:%M")),
+                   Fin.vacation = as.hms(as.POSIXct(x$Vacation, format = "%H:%M - %H:%M" ))
+                         )
+      
+        for(i in 1:length(x$Identifiant))
+        { if( x$Fin.vacation[i] == 0 & is.na(x$Fin.vacation[i]) == FALSE)
+          { x$Fin.vacation[i] <- x$Fin.vacation[i] + 24*3600 } }
+      
+      x[x$Fin.vacation > 23*3600+30*60,]
+      x$Vehicule <- as.character(x$Vehicule)
+      
+      x$Vol <- as.character(x$Vol)
+      
+      x$Arrv.reel.avion <-  as.hms(as.POSIXct(x$Arrv.reel.avion, format = "%H:%M"))
+      
+      x$Arrv.theor.avion <- as.hms(as.POSIXct(x$Arrv.theor.avion, format = "%H:%M"))
+      
+      x$PKG <- as.character(x$PKG)  
+      
+      x$Taches.assigne <- as.hms(as.POSIXct(x$Taches.assigne, format =  "%H:%M"))
+      
+      x$Taches.accepte <- as.hms(as.POSIXct(x$Taches.accepte, format = "%H:%M")) 
+      
+      x$Arrive.zec <- as.hms(as.POSIXct(x$Arrive.zec, format = "%H:%M"))
+      
+      x$Arrv.avion.decla.agents <- as.hms(as.POSIXct(x$Arrv.avion.decla.agents, format = "%H:%M"))
+      
+      x$Debut.dechargement <- as.hms(as.POSIXct(x$Debut.dechargement, format = "%H:%M"))
+      
+      x$Chargement.bagages <- as.hms(as.POSIXct(x$Chargement.bagages, format = "%H:%M"))
+      
+      x$Depart.zec <- as.hms(as.POSIXct(x$Depart.zec, format = "%H:%M"))
+      
+      x$Arrive.aux.trieurs <- as.hms(as.POSIXct(x$Arrive.aux.trieurs, format = "%H:%M"))
+      
+      x$Dechargement.triage <- as.hms(as.POSIXct(x$Dechargement.triage, format = "%H:%M"))
+      
+      x$Zone.Tampon <- as.hms(as.POSIXct(x$Zone.Tampon, format = "%H:%M"))
+  
+      x$Type.de.Tache <-  as.character(x$Type.de.Tache) 
+      
+      x$Nom.de.la.tache <- as.character(x$Nom.de.la.tache)
+      
+      x$Quantite.prevu <- x$Quantite.prevu
+      
+      x$Quantite.reelle <- x$Quantite.reelle
+      
+      x$Pinon <- x$Pinon
+      
+      x$Typologie <- as.character(x$Typologie)
+      
+      x$Parametres <- x$Parametres
+      
+      x$Trieurs <- as.character(x$Trieurs) 
+      
+      x$DEJA.DISPO<- x$DEJA.DISPO
+      
+      x$X2nd.TOUR <- x$X2nd.TOUR
+      
+      x$Transfere <- x$Transfere
+      
+      x$Type.avion <- as.character(x$Type.avion)
+      
+      x$Traite <- x$Traite
+  
+  return(x)
+}
+
+##Gestions des érreurs 
+Erreur.ajust <- function(x)
+{
+  
+  library(hms)
+  library(dplyr)
+moy.Delai.accep.taches <- as.hms(round(mean(difftime(x$Taches.accepte,x$Taches.assigne), na.rm = TRUE),0))
+
+moy.Delai.mise.en.position <- as.hms(round(mean(difftime(x$Arrive.zec,x$Arrv.reel.avion), na.rm = TRUE),0)) 
+
+moy.Mise.a.dispo <- as.hms(round(mean(difftime(x$Chargement.bagages,x$Arrv.reel.avion), na.rm = TRUE),0))
+
+moy.Delai.depart.zec <- as.hms(round(mean(difftime(x$Depart.zec,x$Arrv.reel.avion), na.rm = TRUE),0))   
+
+moy.temps.de.Rapatriement <- as.hms(round(mean(difftime(x$Arrive.aux.trieurs,x$Arrv.reel.avion), na.rm = TRUE),0))
+
+moy.Delai.dechargement <- as.hms(round(mean(difftime(x$Dechargement.triage, x$Arrive.aux.trieurs ),na.rm = TRUE),0))
+      
+for(i in 1 : length(x$Identifiant))
+ {
+        
+  if( x$Zone.Tampon[i] < x$Dechargement.triage[i] &
+            is.na(x$Dechargement.triage[i]) != TRUE &
+                        is.na(x$Zone.Tampon[i])!= TRUE ){ x$Dechargement.triage[i] <- x$Zone.Tampon[i] }
+  
+          if( x$Dechargement.triage[i] < x$Arrive.aux.trieurs[i] &
+                          is.na(x$Dechargement.triage[i]) != TRUE &
+                              is.na(x$Arrive.aux.trieurs[i]) != TRUE){ x$Arrive.aux.trieurs[i] <- x$Dechargement.triage[i]} 
+  
+          if(x$Arrive.aux.trieurs[i] <  x$Depart.zec[i] &
+                  is.na(x$Arrive.aux.trieurs[i]) != TRUE &
+                            is.na(x$Depart.zec[i]) != TRUE){ x$Depart.zec[i] <- x$Arrive.aux.trieurs[i] }
+  
+          if(x$Depart.zec[i] < x$Chargement.bagages[i] &
+                          is.na(x$Depart.zec[i]) != TRUE &
+                      is.na(x$Chargement.bagages[i])!= TRUE ){ x$Chargement.bagages[i] <- x$Depart.zec[i]}
+  
+          if( x$Chargement.bagages[i] < x$Debut.dechargement[i] &
+                          is.na(x$Debut.dechargement[i]) != TRUE &
+                              is.na(x$Chargement.bagages[i]) != TRUE){x$Debut.dechargement[i] <- x$Chargement.bagages[i]}
+  
+          if(x$Debut.dechargement[i] < x$Arrive.zec[i] &
+                  is.na(x$Debut.dechargement[i]) != TRUE &
+                              is.na(x$Arrive.zec[i]) != TRUE){x$Arrive.zec[i] <- x$Debut.dechargement[i] }
+  
+          if(x$Arrive.zec[i] < x$Taches.accepte[i] &
+                  is.na(x$Taches.accepte[i]) != TRUE &
+                          is.na(x$Arrive.zec[i])!= TRUE){ x$Taches.accepte[i] <- x$Arrive.zec[i]}
+  
+          if( x$Taches.accepte[i]  < x$Taches.assigne[i] &
+                        is.na(x$Taches.accepte[i]) != TRUE &
+                            is.na(x$Taches.assigne[i])!= TRUE){x$Taches.assigne[i] <- x$Taches.accepte[i]}
+        
+        
+        
+        library(dplyr)
+
+        if(is.na(x$Taches.accepte[i]) == TRUE)
+          {x$Taches.accepte[i] <- x$Taches.assigne[i] + moy.Delai.accep.taches}
+
+        if(is.na(x$Arrive.zec[i]) == TRUE)
+          { x$Arrive.zec[i] <- x$Taches.accepte[i] + moy.Delai.mise.en.position}
+
+        if(is.na(x$Chargement.bagages[i]) == TRUE )
+          { 
+            if(x$DEJA.DISPO[i] == "NON")
+              { x$Chargement.bagages[i] <- x$Arrv.reel.avion[i] + moy.Mise.a.dispo }else
+            {
+              if (str_detect("T",x$Zone.Tampon[i]) == TRUE | str_detect("L",x$Zone.Tampon[i]) == TRUE)
+              { x$Chargement.bagages[i] <- x$Arrv.reel.avion[i] + 25*60 }else
+              { x$Chargement.bagages[i] <- x$Arrv.reel.avion[i] + 10*60 }
+            }
+         }
+
+        if(is.na(x$Depart.zec[i]) == TRUE)
+          {x$Depart.zec[i] <- x$Arrv.reel.avion[i] + moy.Delai.depart.zec} 
+
+        if(is.na(x$Arrive.aux.trieurs[i]) == TRUE)
+          { 
+           if(x$Quantite.reelle[i] == 0){ x$Arrive.aux.trieurs[i] <- x$Depart.zec[i]}else
+            {
+              if (is.na(x$Dechargement.triage[i]) == FALSE ){ x$Arrive.aux.trieurs[i] <- x$Dechargement.triage[i]}else
+              {x$Arrive.aux.trieurs[i] <- x$Arrv.reel.avion[i] + moy.temps.de.Rapatriement}
+            }
+          }
+
+        if(is.na(x$Dechargement.triage[i]) == TRUE)
+        {
+          if(x$Quantite.reelle[i] == 0){ x$Dechargement.triage[i] <- x$Arrive.aux.trieurs[i]}else
+          {x$Dechargement.triage[i] <- x$Arrive.aux.trieurs[i] + moy.Delai.dechargement}
+        }
+
+        if( is.na(x$Zone.Tampon[i]) == TRUE ){ x$Zone.Tampon[i] <- x$Dechargement.triage[i]}
+  
+  
+        if(is.na(x$Debut.vacation[i])==TRUE)
+        {
+          select.agent <- x[x$Nom == x$Nom[i]& x$Date == x$Date[i],]
+                 for(y in 1 : length(select.agent$Nom))
+                 {
+                   if( is.na(x$Debut.vacation[y]) == FALSE  )
+                     {x$Debut.vacation[i] <- x$Debut.vacation[y]}
+                 }
+        }
+  
+        if(is.na(x$Fin.vacation[i])==TRUE)
+        {
+          select.agent <- x[x$Nom == x$Nom[i]& x$Date == x$Date[i],]
+                 for(y in 1 : length(select.agent$Nom))
+                 {
+                   if( is.na(x$Fin.vacation[y]) == FALSE  )
+                     {x$Fin.vacation[i] <- x$Fin.vacation[y]}
+                 }
+        }
+  
+        
+        if( is.na(x$Identifiant[i]) == TRUE )
+        { 
+          selection <- x[x$Nom == x$Nom[i]  & x$Prenom == x$Prenom[i] & x$Vacation == x$Vacation[i],]
+          for(y in 1: length(selection$Identifiant))
+            {if( is.na(selection$Identifiant[y])== FALSE){ x$Identifiant[i] <- selection$Identifiant[y]; break}}
+        }
+          
+          if( is.na(x$Nom[i]) == TRUE )
+        { 
+          selection <- x[x$Identifiant == x$Identifiant[i],]
+          for(y in 1: length(selection$Identifiant))
+          {if( is.na(selection$Nom[y]) == FALSE){ x$Nom[i] <- selection$Nom[y]; break}}
+        }
+          
+          if( is.na(x$Prenom[i]) == TRUE )
+        { 
+            selection <- x[ x$Identifiant == x$Identifiant[i],]
+            for(y in 1: length(selection$Identifiant))
+            {if( is.na(selection$Prenom[y])== FALSE){ x$Prenom[i] <- selection$Prenom[y]; break}}
+        }
+
+}
+
+return(x)
+}
+
+##Durée de vacations
+duree.de.vac <- function(x)
+{
+  Duree.de.vacation = as.hms(0)
+  for(i in 1 : length(x$Identifiant))
+      { 
+        if( x$Fin.vacation[i] == 0){ x$Fin.vacation[i] <- x$Fin.vacation[i] + 24*3600 }
+        
+           Duree.de.vacation[i] <- x$Fin.vacation[i] - x$Debut.vacation[i] # Vacations
+      }
+  return(Duree.de.vacation)
+}
+
+##Mise a disposition réelle
+Misse.a.dip <- function(x)
+{
+  Mise.a.dispo.relle = as.hms(0)
+  for(i in 1 : length(x$Identifiant))
+      { 
+        Mise.a.dispo.relle[i] <-  x$Chargement.bagages[i] - x$Arrv.reel.avion[i]# chargement
+      }
+  return(Mise.a.dispo.relle)
+}
+
+##Mise a dispo théorique
+M.d.theo <- function(x)
+{
+          library(stringr)
+          Mise.a.dispo.theo <- as.hms(0)
+          for(i in 1 : length(x$Identifiant))
+          {
+            if( str_detect(x$Typologie[i],"T") == TRUE| str_detect(x$Typologie[i],"L")== TRUE)
+            {Mise.a.dispo.theo[i] <-  as.hms("00:25:00") }else
+            {Mise.a.dispo.theo[i] <-  as.hms("00:10:00")}
+          }
+          return(Mise.a.dispo.theo)
+}
+
+##Delai de départ zec réel
+depart.rapatrieur <- function(x)
+{
+  Delai.depart.zec = as.hms(0)
+  for(i in 1 : length(x$Identifiant))
+      { 
+        Delai.depart.zec[i] <-  x$Depart.zec[i] - x$Arrv.reel.avion[i] # Depart zec
+      }
+  return(Delai.depart.zec)
+}
+
+##Delai de depart zec théorique
+D.z.theo <- function(x)
+{
+          Depart.zec.theo <- as.hms(0)
+          for(i in 1 : length(x$Identifiant))
+          {
+           if( str_detect(x$Typologie[i], "T") == TRUE | str_detect(x$Typologie[i], "L") == TRUE )
+           {Depart.zec.theo[i] <-  as.hms("00:29:00") }else
+           {Depart.zec.theo[i] <-  as.hms("00:14:00")}
+          }
+          return(Depart.zec.theo)
+}
+
+##Temps de rapatriement
+entree.dans.trieurs <- function(x)
+{
+  Temps.de.Rapatriement = as.hms(0)
+  for(i in 1 : length(x$Identifiant))
+      { 
+        Temps.de.Rapatriement[i] <-  x$Arrive.aux.trieurs[i] - x$Arrv.reel.avion[i]
+      }
+  return(Temps.de.Rapatriement)
+}
+
+##Rapatriement théorique
+rapat.theorique <- function(a)
+{
+          library(hms)
+          library(stringr)
+          
+          Duree.de.rapat.theo <- as.hms(0)
+          
+          for(i in 1 :length(a$Nom))
+          {
+            if(str_detect(a$PKG[i],"^A") == TRUE  )
+            {
+              
+               if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if(a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 18*60)}
+              if( a$Trieurs[i] == "TBF")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if( a$Trieurs[i] == "M")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] + as.hms(13*60)}
+              if( a$Trieurs[i] == "E")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(14*60)}
+              if( a$Trieurs[i] == "F")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(12*60)}
+              if( a$Trieurs[i] == "TBG")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(15*60)}
+                
+                } 
+              
+              
+            }else
+            if( str_detect(a$PKG[i],"^B" ) == TRUE  )
+            {
+              
+               if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if(a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(17*60)}
+              if( a$Trieurs[i] == "TBF")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(12*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+              if( a$Trieurs[i] == "M")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(14*60)}
+              if(a$Trieurs[i] == "E")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(11*60)}
+              if( a$Trieurs[i] == "F")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(14*60)}
+              if( a$Trieurs[i] == "TBG")
+              {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(9*60)}
+                
+                } 
+              
+              
+            }else
+            if( str_detect(a$PKG[i],"^C") == TRUE   )
+            {
+              
+               if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if(a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(16*60)}
+              if( a$Trieurs[i] == "TBF")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(7*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+              if( a$Trieurs[i] == "M")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(9*60)}
+              if(a$Trieurs[i] == "E")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(8*60)}
+              if( a$Trieurs[i] == "F")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(8*60)}
+              if( a$Trieurs[i] == "TBG")
+              {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(10*60)}
+                
+                } 
+              
+              
+            }else
+            if(  str_detect(a$PKG[i],"^D") == TRUE   )
+            {
+              
+               if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if(a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 16*60)}
+              if( a$Trieurs[i] == "TBF")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 9*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if( a$Trieurs[i] == "M")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(9*60)}
+              if(a$Trieurs[i] == "E")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(10*60)}
+              if( a$Trieurs[i] == "F")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(9*60)}
+              if( a$Trieurs[i] == "TBG")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(9*60)}
+                
+                } 
+              
+              
+            }else
+            if(str_detect(a$PKG[i],"^E") == TRUE )
+            {
+              
+               if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if(a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 14*60)}
+              if( a$Trieurs[i] == "TBF")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 10*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if( a$Trieurs[i] == "M")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(9*60)}
+              if(a$Trieurs[i] == "E")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(10*60)}
+              if( a$Trieurs[i] == "F")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(16*60)}
+              if( a$Trieurs[i] == "TBG")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(11*60)}
+                
+                } 
+              
+              
+            }else
+            if(str_detect(a$PKG[i],"^F") == TRUE   )
+            {
+              
+               if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if(a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 9*60)}
+              if( a$Trieurs[i] == "TBF")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 10*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if( a$Trieurs[i] == "M")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(10*60)}
+              if(a$Trieurs[i] == "E")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(10*60)}
+              if( a$Trieurs[i] == "F")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(9*60)}
+              if( a$Trieurs[i] == "TBG")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(11*60)}
+                
+                } 
+              
+              
+            }else
+            if( str_detect(a$PKG[i],"^G") == TRUE  )
+            {
+               if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if(a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 20*60)}
+              if( a$Trieurs[i] == "TBF")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 11*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if( a$Trieurs[i] == "M")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(11*60)}
+              if( a$Trieurs[i] == "E")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+              if( a$Trieurs[i] == "F")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(15*60)}
+              if( a$Trieurs[i] == "TBG")
+              { Duree.de.rapat.theo[i] <-a$Depart.zec[i] - a$Arrv.reel.avion[i] + as.hms(14*60)}
+                
+                } 
+              
+              
+              
+            }else
+            if( str_detect(a$PKG[i],"^H") == TRUE   )
+            {
+              
+               if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if(a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 12*60)}
+              if( a$Trieurs[i] == "TBF")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if( a$Trieurs[i] == "M")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(20*60)}
+              if( a$Trieurs[i] == "E")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(19*60)}
+              if( a$Trieurs[i] == "F")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+              if( a$Trieurs[i] == "TBG")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(23*60)}
+                
+                } 
+              
+              
+            }else
+            if( str_detect(a$PKG[i],"^J") == TRUE  )
+            {
+              
+               if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if(a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 15*60)}
+              if( a$Trieurs[i] == "TBF")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 18*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if( a$Trieurs[i] == "M")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(25*60)}
+              if( a$Trieurs[i] == "E")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(18*60)}
+              if( a$Trieurs[i] == "F")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(21*60)}
+              if( a$Trieurs[i] == "TBG")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(20*60)}
+                
+                } 
+              
+              
+            }else
+            if( str_detect(a$PKG[i],"K21" )== TRUE|str_detect(a$PKG[i],"K17" )== TRUE|str_detect(a$PKG[i],"K13" )== TRUE|str_detect(a$PKG[i],"K09" )== TRUE||str_detect(a$PKG[i],"K05") == TRUE|str_detect(a$PKG[i],"K01" )== TRUE|str_detect(a$PKG[i],"F03") == TRUE|str_detect(a$PKG[i],"F07" )== TRUE ||str_detect(a$PKG[i],"F09")== TRUE |str_detect(a$PKG[i],"F11") == TRUE|str_detect(a$PKG[i],"F13") == TRUE|str_detect(a$PKG[i],"F15" )  == TRUE  )
+            {
+              
+               if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if(a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] + as.hms( 6*60)}
+              if( a$Trieurs[i] == "TBF")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 15*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if( a$Trieurs[i] == "M")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(15*60)}
+              if(a$Trieurs[i] == "E")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(15*60)}
+              if( a$Trieurs[i] == "F")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(9*60)}
+              if( a$Trieurs[i] == "TBG")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+                
+                } 
+              
+              
+            }else
+            if( str_detect(a$PKG[i],"K71") == TRUE|str_detect(a$PKG[i],"K65") == TRUE|str_detect(a$PKG[i],"K59") == TRUE|str_detect(a$PKG[i],"K53") == TRUE|str_detect(a$PKG[i],"E29") == TRUE|str_detect(a$PKG[i],"E25") == TRUE|str_detect(a$PKG[i],"E21") == TRUE|str_detect(a$PKG[i],"E17") == TRUE|str_detect(a$PKG[i],"E13") == TRUE|str_detect(a$PKG[i],"E09") == TRUE|str_detect(a$PKG[i],"E05") == TRUE|str_detect(a$PKG[i],"E01") == TRUE  )
+            {
+              
+               if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if( a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if( a$Trieurs[i] == "TBF")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 11*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if( a$Trieurs[i] == "M")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(14*60)}
+              if( a$Trieurs[i] == "E")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(7*60)}
+              if( a$Trieurs[i] == "F")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(10*60)}
+              if( a$Trieurs[i] == "TBG")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(13*60)}
+                
+                } 
+              
+              
+            }else
+            if( str_detect(a$PKG[i],"L39") == TRUE|str_detect(a$PKG[i],"L33") == TRUE|str_detect(a$PKG[i],"L27") == TRUE|str_detect(a$PKG[i],"K44") == TRUE|str_detect(a$PKG[i],"K38") == TRUE|str_detect(a$PKG[i],"K32") == TRUE|str_detect(a$PKG[i],"K26") == TRUE)
+            {
+              
+              if(is.na(a$Trieurs[i]) == FALSE & is.na(a$PKG[i]) == FALSE)
+              {
+                  if(a$Trieurs[i] == "S3N")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 10*60)}
+              if( a$Trieurs[i] == "TBF")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 22*60)}
+              if(a$Trieurs[i] == "QSE")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "ZRL")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "GAL C TAPIS 15")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if(a$Trieurs[i] == "TRS")
+                {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+              if( a$Trieurs[i] == "M")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(21*60)}
+              if( a$Trieurs[i] == "E")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(19*60)}
+              if( a$Trieurs[i] == "F")
+                { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(20*60)}
+              if( a$Trieurs[i] == "TBG")
+              { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(20*60)}
+                
+                } 
+              
+              
+            }else
+            if( str_detect(a$PKG[i],"L71") == TRUE|str_detect(a$PKG[i],"L65") == TRUE|str_detect(a$PKG[i],"L59") == TRUE|str_detect(a$PKG[i],"L53") == TRUE|str_detect(a$PKG[i],"K76") == TRUE|str_detect(a$PKG[i],"K70") == TRUE|str_detect(a$PKG[i],"K64") == TRUE|str_detect(a$PKG[i],"K58") == TRUE|str_detect(a$PKG[i],"K52") == TRUE )
+            {
+              if(is.na(a$Trieurs[i]) == FALSE )
+                {
+                    if(a$Trieurs[i] == "S3N")
+                      {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] + as.hms( 11*60)}
+                    if( a$Trieurs[i] == "TBF")
+                    { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 19*60)}
+                    if(a$Trieurs[i] == "QSE")
+                      {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+                    if(a$Trieurs[i] == "ZRL")
+                      {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+                    if(a$Trieurs[i] == "GAL C TAPIS 15")
+                      {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+                    if(a$Trieurs[i] == "TRS")
+                      {Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms( 13*60)}
+                    if( a$Trieurs[i] == "M")
+                      { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(20*60)}
+                    if( a$Trieurs[i] == "E")
+                      { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(18*60)}
+                    if( a$Trieurs[i] == "F")
+                      { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(18*60)}
+                    if( a$Trieurs[i] == "TBG")
+                    { Duree.de.rapat.theo[i] <- a$Depart.zec[i] - a$Arrv.reel.avion[i] +as.hms(19*60)}
+                } 
+              
+            }
+            
+          }
+        
+          return(Duree.de.rapat.theo)
+          
+}
+
+##Temps dans trieurs théorique
+D.trait.trieurs.theo <- function(x)
+{
+  Duree.traitement.trieurs.theo <- as.hms(0)
+  
+  for(i in 1 : length(x$Identifiant))
+  {
+    if(x$Type.de.Tache[i] == "CTR")
+    { Duree.traitement.trieurs.theo[i] = x$Quantite.reelle[i] * as.hms("00:06:00") }else
+    { Duree.traitement.trieurs.theo[i] = x$Quantite.reelle[i] * as.hms("00:00:10") }
+  }
+  return(Duree.traitement.trieurs.theo)
+}
+
+##Identification des voltigeurs
+is.voltigeurs <- function(x,y)
+{
+        Voltigeurs = "0"
+        for(i in 1: length(x$Nom))
+        {
+          Voltigeurs[i] <- "NON"
+          for(j in 1: length(y$Nom))
+          {
+            if(x$Nom[i] == as.character(y$Nom[j]) && x$Prenom[i] == as.character(y$Prenom[j]))
+            {Voltigeurs[i] = "OUI"}
+          }
+        }
+        return(Voltigeurs)
+}
+
+##Typologies des vols
+type.de.vol <- function(x)
+{
+        library(stringr) # poiur utiliser la fonction  str_detect
+
+        res = 0
+
+        for(i in 1: length(x$Vol))
+        {
+          if( str_length(x$Vol[i]) <= 5 & str_detect(x$PKG[i], "J") ==  FALSE &
+                              is.na(x$Vol[i]) == FALSE & is.na(x$PKG[i])== FALSE){res[i] = "Long courier"}else
+          if(str_length(x$Vol[i]) > 5 & str_detect(x$PKG[i], "J") ==  FALSE &
+                              is.na(x$Vol[i]) == FALSE & is.na(x$PKG[i])== FALSE){res[i] = "Moyen courier"}else
+                                                                                   {res[i] ="3em niveau"}
+        }
+
+        return(as.character(res))
+}
+
+##Creation de nouvelles variables
+Create.new.variables <- function(x,y)
+{
+  library(stringr)
+  x <- mutate(x,
+                   Voltigeurs = is.voltigeurs(x,y),
+                   Duree.de.vacation = duree.de.vac(x),
+                   Delai.depart.zec = depart.rapatrieur(x),
+                   Depart.zec.theo = D.z.theo(x),
+                   Mise.a.dispo.relle = Misse.a.dip(x),
+                   Mise.dispo.theo = M.d.theo(x),
+                   Temps.de.Rapatriement = entree.dans.trieurs(x),
+                   Temps.de.rapat.theo = rapat.theorique(x),
+                   Duree.de.tache.theo = as.hms(rapat.theorique(x) + D.trait.trieurs.theo(x)),
+                   Duree.de.tache = as.hms(difftime(x$Zone.Tampon , x$Taches.accepte)),
+                   Retard.avion =  as.hms(difftime(x$Arrv.theor.avion, x$Arrv.reel.avion)),
+                   Delai.arrv.bloc =  as.hms(difftime(x$Arrive.zec,x$Arrv.reel.avion)),
+                   Delai.de.dechargement = as.hms(difftime( x$Dechargement.triage,x$Arrive.aux.trieurs)),
+                   Delai.accept.missions = as.hms(difftime( x$Taches.accepte,x$Taches.assigne)),
+                   Type.de.Vol = type.de.vol(x)
+                     )
+  
+  
+  
+  return(x)
+}
+
+##Analyse detaillée par agents
+recap.agents <- function(x)
+{
+  library(stringr)
+  library(hms)
+Vols.traites = 0
+Taches.acceptees = 0
+Missions.effectuees = 0
+Nom = "a"
+Prenom = "a"
+Identifiants = "a"
+Nb.de.touches = 0
+Nb.de.ctr = 0
+Qt.de.vrac = 0
+Voltigeurs = "0"
+Duree.de.vacations = as.hms(0) 
+Duree.engagement = as.hms(0)
+Actif.avec.Dt = 0
+Actif.sans.Dt = 0
+
+Jours.travailles = 0
+Mission.1.trieur = 0;Mission.2.trieurs= 0; Mission.3.trieurs = 0; Mission.4.trieurs = 0;
+Retard.dept.zec <- 0
+Retard.livraison.vrac <- 0;Retard.livraison.ctr <- 0
+Temps.moy.trieurs <- as.hms(0)
+Duree.moy.missions <- as.hms(0)
+Moy.missions.acceptees <- as.hms(0)
+Moy.depart.zec <- as.hms(0)
+Dechargement.tardif <- 0;Duree.Dechargement.tardif <- as.hms(0);
+Inf.5min  <- 0;De.5min.a.15min  <- 0;De.15min.a.30min  <- 0;Sup.30min <- 0
+
+
+DataX <- x[order(x$Vol,x$Date,x$Arrv.reel.avion,x$Identifiant,x$X2nd.TOUR),]
+
+for( i in 1 : length(unique(DataX$Identifiant)))##Nombre d'agents présent en journée
+{
+
+  
+##################### Selection d'un agents
+  
+    DataX1 <- DataX[DataX$Identifiant == unique(DataX$Identifiant)[i], ]
+    
+#####################
+        
+        Jours.travailles[i] <- length(unique(DataX1$Date))
+        res.d.v <- as.hms(0)
+        
+        
+       for(k in 1:length(unique(DataX1$Date)))
+       {
+         selection <- DataX1[DataX1$Date == unique(DataX1$Date)[k],]
+         res.d.v <- res.d.v + selection$Duree.de.vacation[1]
+       }
+        Duree.de.vacations[i] = res.d.v
+        
+        
+        Nom[i] <- as.character( unique(DataX1$Nom))
+        Prenom[i] <- as.character(unique(DataX1$Prenom))
+        Identifiants[i] <- as.character(unique(DataX$Identifiant)[i]) 
+        Vols.traites[i] <- length(unique(DataX1$Vol))
+        Taches.acceptees[i] <- length(DataX1$Vol)
+        Voltigeurs[i] <- as.character(DataX1$Voltigeurs[1])
+
+###################### 
+    res <- 0
+    resctr <- 0
+    resqtvrac <- 0
+    miss1t <- 0; miss2t <- 0;miss3t <- 0; miss4t<-0
+    resrl.ctr <- 0 ;resrl.vrac <- 0
+    resdepzec <- 0
+    reseng <- as.hms(0)
+    nb.dech.tard <- 0 ;nb.dech.tard.inf5<- 0;nb.dech.tard.inf15min<- 0; nb.dech.tard.inf30min<- 0;nb.dech.tard.sup30min<- 0;duree.dechg.tard <- as.hms(0)
+    
+    
+    
+        
+        Temps.moy.trieurs[i] <- as.hms(round(mean( DataX1$Delai.de.dechargement,na.rm = TRUE ),0))
+        
+        Moy.depart.zec[i] <- as.hms(round(mean( DataX1$Delai.depart.zec,na.rm = TRUE ),0))
+          
+        Duree.moy.missions[i] <- as.hms(round(mean( DataX1$Duree.de.tache,na.rm = TRUE ),0))
+          
+        Moy.missions.acceptees[i] <- as.hms(round(mean( DataX1$Delai.accept.missions,na.rm = TRUE ),0))
+    
+    
+        
+      for( y in 1 : length(DataX1$Identifiant))#On parcourt toutes les taches de l'agent sélectioné
+        {
+################### Nombre de missions
+        
+        if(y != length(DataX1$Identifiant)& DataX1$Date[y] == DataX1$Date[y + 1] &
+                                DataX1$Arrv.theor.avion[y] == DataX1$Arrv.theor.avion[y+1] &
+                                               DataX1$Arrive.zec[y] == DataX1$Arrive.zec[y+1] &            
+                                                  DataX1$Identifiant[y] == DataX1$Identifiant[y+1] &
+                                                      DataX1$Vol[y] == DataX1$Vol[y+1] & DataX1$PKG[y] == DataX1$PKG[y+1] )
+          {}else
+              {
+                 select.miss <- DataX1[DataX1$Date == DataX1$Date[y] &
+                                          DataX1$Arrv.theor.avion == DataX1$Arrv.theor.avion[y] &
+                                                        DataX1$Arrive.zec == DataX1$Arrive.zec[y] &            
+                                                        DataX1$Identifiant == DataX1$Identifiant[y] &
+                                                        DataX1$Vol == DataX1$Vol[y] & DataX1$PKG == DataX1$PKG[y] ,]
+                 
+                 res = res +1
+                 
+                 reseng = reseng + max(select.miss$Duree.de.tache)
+                 
+                if( length(unique (select.miss$Trieurs)) == "1" ){ miss1t = miss1t + 1 }else
+                  if( length(unique (select.miss$Trieurs)) == "2" ){ miss2t = miss2t + 1}else
+                    if ( length(unique (select.miss$Trieurs)) == "3" ){ miss3t = miss3t + 1 }else
+                      if ( length(unique (select.miss$Trieurs)) == "4" ){ miss4t = miss4t + 1}
+                 
+                 if(max(select.miss$Mise.a.dispo.relle) > max(select.miss$Mise.dispo.theo) & select.miss$DEJA.DISPO[1] == "NON" )
+                 {
+                   nb.dech.tard = nb.dech.tard + 1
+                   
+                   Delai.mise.dispo <- max(select.miss$Chargement.bagages) - max(select.miss$Arrive.zec)
+                   
+                
+                   duree.dechg.tard = duree.dechg.tard + Delai.mise.dispo
+                   
+                   if( Delai.mise.dispo <= as.hms("00:05:00") ){  nb.dech.tard.inf5 =  nb.dech.tard.inf5 + 1  }else 
+                     if (Delai.mise.dispo > as.hms("00:05:00") & Delai.mise.dispo <= as.hms("00:15:00")){nb.dech.tard.inf15min =  nb.dech.tard.inf15min + 1  }else
+                       if(Delai.mise.dispo > as.hms("00:15:00") & Delai.mise.dispo <= as.hms("00:30:00")){nb.dech.tard.inf30min =  nb.dech.tard.inf30min + 1  }else
+                       {nb.dech.tard.sup30min =  nb.dech.tard.sup30min + 1 }
+                   
+                 }
+                   
+                 
+                 if( min(select.miss$Delai.depart.zec) > max(select.miss$Depart.zec.theo) ){resdepzec = resdepzec+1}
+              }
+            
+            
+            Missions.effectuees[i] <- res
+    
+            Duree.engagement[i] <- as.hms(reseng)
+               
+            Actif.avec.Dt[i] <- round((as.integer(Duree.engagement[i]) / (as.integer(Duree.de.vacations[i]) - 30*60))*100,2)
+            Actif.sans.Dt[i] <- round((as.integer(Duree.engagement[i]) / (as.integer(Duree.de.vacations[i]) - 30*60 + as.integer(duree.dechg.tard)))*100,2)
+            
+            Mission.1.trieur[i] = miss1t ; Mission.2.trieurs[i] = miss2t ; Mission.3.trieurs[i] = miss3t  ; Mission.4.trieurs[i] = miss4t
+            Dechargement.tardif[i] = nb.dech.tard
+            Inf.5min[i] = nb.dech.tard.inf5
+            De.5min.a.15min[i] = nb.dech.tard.inf15min
+            De.15min.a.30min[i] = nb.dech.tard.inf30min
+            Sup.30min[i] =nb.dech.tard.sup30min
+            Duree.Dechargement.tardif[i] = duree.dechg.tard
+##################### determine le nombre de vrac et conteneur traités dans la journée plus les quantitées 
+           
+            if( DataX1$Type.de.Tache[y] == "CTR" )
+              {
+                  resctr = resctr + DataX1$Quantite.reelle[y]
+              
+              if( DataX1$Temps.de.Rapatriement[y] > DataX1$Temps.de.rapat.theo[y] &
+                                      is.na(DataX1$Temps.de.rapat.theo[y]) == FALSE){resrl.ctr = resrl.ctr +1}
+              }else
+            { 
+              resqtvrac = resqtvrac + DataX1$Quantite.reelle[y]
+              
+              if( DataX1$Temps.de.Rapatriement[y] > DataX1$Temps.de.rapat.theo[y] &
+                                      is.na(DataX1$Temps.de.rapat.theo[y]) == FALSE){resrl.vrac = resrl.vrac +1} ##Nombre de retard livraison vrac
+            }
+            
+              Nb.de.ctr[i] = resctr
+              Qt.de.vrac[i] = resqtvrac
+          
+
+########################## erreurs depart zec par missions
+       
+          Retard.dept.zec[i] = resdepzec
+          
+############################## retard livraison bagages         
+      Retard.livraison.vrac[i] <- resrl.vrac
+      Retard.livraison.ctr[i] <- resrl.ctr
+###############################       
+      }
+}
+
+    recap <- data.frame(Identifiants ,Nom,Prenom,Voltigeurs,Jours.travailles, Vols.traites,Taches.acceptees,Qt.de.vrac,Nb.de.ctr,Missions.effectuees,
+                        Retard.dept.zec,Mission.1.trieur,Mission.2.trieurs,Mission.3.trieurs,Mission.4.trieurs,Retard.livraison.vrac,Retard.livraison.ctr,
+                        Dechargement.tardif,Inf.5min,De.5min.a.15min,De.15min.a.30min,Sup.30min,Duree.Dechargement.tardif,Moy.missions.acceptees,Moy.depart.zec,
+                        Temps.moy.trieurs,Duree.moy.missions,Duree.de.vacations,Duree.engagement,Actif.avec.Dt,Actif.sans.Dt) 
+
+    recap <- recap[order(recap$Nom,recap$Prenom),]
+
+return(recap)
+
+}
+
+##Analyse détaillée par plages horaires
+recap.plages <- function(x)
+{
+  library(hms)
+  library(dplyr)
+  Plages <- c("P1","P2","P3","P4","P5","P6","P7")
+  
+  Debut.plage <- c(
+                    as.hms("04:00:00"),as.hms("07:15:00"),as.hms("09:35:00"),
+                    as.hms("12:35:00"),as.hms("14:35:00"),as.hms("17:35:00"),as.hms("20:15:00")
+                   )
+  
+  Fin.plage <-  c(
+                   as.hms("07:14:59"),as.hms("09:34:59"),as.hms("12:34:59"),
+                   as.hms("14:34:59"),as.hms("17:34:59"),as.hms("20:14:59"),as.hms("24:00:00")
+                 )
+  
+  plage.horaire <- data.frame(Plages,Debut.plage,Fin.plage)
+  
+  DataX <- x[order(x$Vol,x$Date,x$Arrv.reel.avion,x$Identifiant,x$X2nd.TOUR),]
+           
+  
+  Taches.acceptees <- 0;Retard.livraison.vrac <- 0;Retard.livraison.ctr <- 0;Nb.de.ctr <- 0;Qt.de.vrac <- 0;Retard.dept.zec <- 0
+  Mission.AB <- 0;Missions.declanchees <- 0;Vols.arrives.reels <- 0;Vols.arrives.theoriques <- 0
+  Mission.1.trieur = 0;Mission.2.trieurs= 0; Mission.3.trieurs = 0; Mission.4.trieurs = 0;
+  Moy.missions.acceptees <- as.hms(0);Moy.depart.zec<- as.hms(0);Temps.moy.trieurs <- as.hms(0);
+  Duree.moy.missions<- as.hms(0);Long.courrier <- 0;Nb.de.touches <- 0
+  Moyen.courier <- 0; Troisieme.niveau <- 0;Touches.par.vols <- 0;Dechargement.tardif <- 0;Duree.Dechargement.tardif <- as.hms(0);
+  Inf.5min  <- 0;De.5min.a.15min  <- 0;De.15min.a.30min  <- 0;Sup.30min <- 0
+  
+  for(i in 1 : length(plage.horaire$Plages))
+  { 
+    resta <- 0 ;resrl.ctr <- 0 ;resrl.vrac <- 0
+    
+    resqvrac <- 0 ; resctr <- 0 
+    
+    resmd <- 0 ;resdz <- 0 
+    
+    resap <- 0 ;res.touches <- 0
+    
+    vr <- 0;vt <- 0;Lc <- 0;Mc <- 0;Tn <- 0
+    
+    nb.dech.tard <- 0 ;nb.dech.tard.inf5<- 0;nb.dech.tard.inf15min<- 0; nb.dech.tard.inf30min<- 0;nb.dech.tard.sup30min<- 0;duree.dechg.tard <- as.hms(0)
+    
+    miss1t <- 0; miss2t <- 0;miss3t <- 0; miss4t<-0
+    
+    
+########Temps moyens
+      
+      
+      
+      Moy.missions.acceptees[i] <- as.hms(round(mean( DataX[DataX$Taches.accepte >= plage.horaire$Debut[i] & 
+                                                DataX$Taches.accepte <= plage.horaire$Fin[i], ]$Delai.accept.missions,
+                                                                                                       na.rm = TRUE ),0))
+      
+      Moy.depart.zec[i] <- as.hms(round(mean( DataX[DataX$Taches.accepte >= plage.horaire$Debut[i] & 
+                                                DataX$Taches.accepte <= plage.horaire$Fin[i], ]$Delai.depart.zec,
+                                                                                                       na.rm = TRUE ),0))
+      
+      Duree.moy.missions[i] <- as.hms(round(mean( DataX[DataX$Taches.accepte >= plage.horaire$Debut[i] & 
+                                                DataX$Taches.accepte <= plage.horaire$Fin[i], ]$Duree.de.tache,
+                                                                                                       na.rm = TRUE ),0))
+      
+      Temps.moy.trieurs[i] <-  as.hms(round(mean( DataX[DataX$Taches.accepte >= plage.horaire$Debut[i] & 
+                                                DataX$Taches.accepte <= plage.horaire$Fin[i], ]$Delai.de.dechargement,
+                                                                                                       na.rm = TRUE ),0))
+    
+      select.plage <- x[x$Arrv.reel.avion >= plage.horaire$Debut[i] &
+                                 x$Arrv.reel.avion <= plage.horaire$Fin[i] ,]
+      select.plage <-  select.plage[order(select.plage$Vol,select.plage$Date,select.plage$Arrv.reel.avion,select.plage$Identifiant,select.plage$X2nd.TOUR),]
+    
+    for(y in 1 : length(select.plage$Identifiant))
+      {
+
+########Nombre de vrac et CTR
+  
+        if(select.plage$Type.de.Tache[y] == "VRAC")
+          {
+            resqvrac = resqvrac + select.plage$Quantite.reelle[y]
+            
+            if( select.plage$Temps.de.Rapatriement[y] > select.plage$Temps.de.rapat.theo[y] &
+                                      is.na(select.plage$Temps.de.rapat.theo[y]) == FALSE){resrl.vrac = resrl.vrac +1} ##Nombre de retard livraison vrac
+          }else
+          {
+            resctr = resctr +select.plage$Quantite.reelle[y]
+            
+            if( select.plage$Temps.de.Rapatriement[y] > select.plage$Temps.de.rapat.theo[y] &
+                                      is.na(select.plage$Temps.de.rapat.theo[y]) == FALSE ){resrl.ctr = resrl.ctr +1} ##Nombre de retard livraison cont
+          }
+
+        ########Regard par Missions
+      
+        if(y < length(select.plage$Identifiant) & select.plage$Date[y] == select.plage$Date[y + 1] &
+                        select.plage$Arrv.theor.avion[y] == select.plage$Arrv.theor.avion[y+1] &
+                                        select.plage$Arrive.zec[y] == select.plage$Arrive.zec[y+1] &
+                                                         select.plage$Vol[y] == select.plage$Vol[y+1] & 
+                                                        select.plage$Identifiant[y] == select.plage$Identifiant[y+1] &
+                                                                              select.plage$PKG[y] == select.plage$PKG[y+1])
+          {}else{
+                  
+                  select.miss <- select.plage[select.plage$Vol == select.plage$Vol[y] &
+                                         select.plage$Arrive.zec == select.plage$Arrive.zec[y] &
+                                         select.plage$Identifiant == select.plage$Identifiant[y] &
+                                         select.plage$Arrv.theor.avion == select.plage$Arrv.theor.avion[y] &
+                                         select.plage$Date == select.plage$Date[y] & select.plage$PKG == select.plage$PKG[y] ,]
+                                    
+                
+                          resmd = resmd +1 
+                          
+                          for(l in 1 :  length(select.miss$X2nd.TOUR))
+                          {
+                            if( select.miss$X2nd.TOUR[l] == "OUI"){res.touches = res.touches + 1;break }
+                          }
+                         res.touches = res.touches + 1
+                         if(min(select.miss$Delai.arrv.bloc) > 0 ){resap = resap +1}
+                          
+                          if( min(select.miss$Delai.depart.zec) > max(select.miss$Depart.zec.theo)){resdz = resdz +1}
+                                
+                          if( length(unique (select.miss$Trieurs)) == "1" ){ miss1t = miss1t + 1 }else
+                            if ( length(unique (select.miss$Trieurs)) == "2" ){ miss2t = miss2t + 1 }else
+                              if ( length(unique (select.miss$Trieurs)) == "3" ){  miss3t = miss3t + 1 }else
+                                if ( length(unique (select.miss$Trieurs)) == "4" ){ miss4t = miss4t + 1}
+                                
+                  
+                          if(max(select.miss$Mise.a.dispo.relle) > max(select.miss$Mise.dispo.theo) & select.miss$DEJA.DISPO[1] == "NON" )
+                         {
+                               nb.dech.tard = nb.dech.tard + 1
+                               
+                               Delai.mise.dispo <- max(select.miss$Mise.a.dispo.relle - select.miss$Mise.dispo.theo)
+                            
+                               duree.dechg.tard = duree.dechg.tard + Delai.mise.dispo
+                           
+                               if( Delai.mise.dispo <= as.hms("00:05:00") ){  nb.dech.tard.inf5 =  nb.dech.tard.inf5 + 1  }else 
+                                 if (Delai.mise.dispo > as.hms("00:05:00") & Delai.mise.dispo <= as.hms("00:15:00"))
+                                   {nb.dech.tard.inf15min =  nb.dech.tard.inf15min + 1  }else
+                                   if(Delai.mise.dispo > as.hms("00:15:00") & Delai.mise.dispo <= as.hms("00:30:00"))
+                                     {nb.dech.tard.inf30min =  nb.dech.tard.inf30min + 1  }else
+                                   {nb.dech.tard.sup30min =  nb.dech.tard.sup30min + 1 }
+                           
+                          }
+                         
+                    }
+        
+      }
+      
+
+      for ( n in 1 : length(DataX$Identifiant))
+        {
+
+
+                if( n != length(DataX$Identifiant) &
+                        DataX$Arrv.theor.avion[n] == DataX$Arrv.theor.avion[n+1] &
+                                                      DataX$Date[n] == DataX$Date[n+1] &
+                                                             DataX$Vol[n] == DataX$Vol[n+1]& 
+                                                    DataX$PKG[n] == DataX$PKG[n+1] )
+                      {}else{
+
+                              if(DataX$Arrv.reel.avion[n] >= plage.horaire$Debut[i] &
+                                 DataX$Arrv.reel.avion[n] < plage.horaire$Fin[i])
+                              {
+                                vr = vr +1
+                               if(DataX$Type.de.Vol[n] == "Long courier"){Lc = Lc +1}else
+                               if(DataX$Type.de.Vol[n] == "Moyen courier"){Mc = Mc +1}else{Tn = Tn + 1 }
+                              }
+
+
+                              if( DataX$Arrv.theor.avion[n] >= plage.horaire$Debut[i] &
+                                              DataX$Arrv.theor.avion[n] <= plage.horaire$Fin[i])
+                              {vt = vt +1}
+
+                            }
+
+
+
+        }
+    
+    Taches.acceptees[i] <- length(select.plage$Identifiant)
+    Retard.livraison.vrac[i] <- resrl.vrac
+    Retard.livraison.ctr[i] <- resrl.ctr
+    Nb.de.ctr[i] <- resctr
+    Qt.de.vrac[i] <- resqvrac
+    Missions.declanchees[i] <- resmd
+    Mission.AB[i] <- resap
+    Retard.dept.zec[i] <- resdz
+    Mission.1.trieur[i] = miss1t 
+    Mission.2.trieurs[i] = miss2t 
+    Mission.3.trieurs[i] = miss3t 
+    Mission.4.trieurs[i] = miss4t
+    Nb.de.touches[i] = res.touches
+    Dechargement.tardif[i] = nb.dech.tard
+    Inf.5min[i] = nb.dech.tard.inf5
+    De.5min.a.15min[i] = nb.dech.tard.inf15min
+    De.15min.a.30min[i] = nb.dech.tard.inf30min
+    Sup.30min[i] =nb.dech.tard.sup30min
+    Duree.Dechargement.tardif[i] = duree.dechg.tard
+    Vols.arrives.reels[i] <- vr
+    Vols.arrives.theoriques[i] <- vt
+    Long.courrier[i] <- Lc
+    Moyen.courier[i] <- Mc
+    Troisieme.niveau[i] <- Tn
+    Touches.par.vols[i] <- round(Nb.de.touches[i] /Vols.arrives.reels[i],1)
+    
+
+  }
+    recap <- data.frame(plage.horaire,Taches.acceptees,Nb.de.ctr,Qt.de.vrac,Retard.livraison.vrac,Retard.livraison.ctr,
+                        Missions.declanchees, Mission.AB,Retard.dept.zec,Mission.1.trieur,Mission.2.trieurs,Mission.3.trieurs,Mission.4.trieurs,
+                        Vols.arrives.reels,Vols.arrives.theoriques,Nb.de.touches,Touches.par.vols,Long.courrier,Moyen.courier,Troisieme.niveau,
+                        Moy.depart.zec,Dechargement.tardif,Inf.5min,De.5min.a.15min,De.15min.a.30min,Sup.30min,Duree.Dechargement.tardif,
+                        Temps.moy.trieurs,Moy.missions.acceptees,Duree.moy.missions)
+    return(recap)
+}
+
+##Analyse detaillée par typologies de vols
+recap.type.vol <- function(x)
+{
+  library(hms)
+  library(dplyr)
+  library(kableExtra)
+  Types.de.vol <- as.character(unique(x$Type.de.Vol))
+  
+  DataX <- x[order(x$Vol,x$Date,x$Arrv.reel.avion,x$Identifiant,x$X2nd.TOUR),]
+           
+  
+  Taches.acceptees <- 0;Retard.livraison.vrac <- 0;Retard.livraison.ctr <- 0;Nb.de.ctr <- 0;Qt.de.vrac <- 0;Retard.dept.zec <- 0
+  Mission.AB <- 0;Missions.declanchees <- 0;Vols.arrives.reels <- 0;Vols.arrives.theoriques <- 0;Vol.GEH <- 0;Vol.AF <- 0;
+  Mission.1.trieur = 0;Mission.2.trieurs= 0; Mission.3.trieurs = 0; Mission.4.trieurs = 0;
+  Moy.missions.acceptees <- as.hms(0);Moy.depart.zec<- as.hms(0);Temps.moy.trieurs <- as.hms(0);
+  Duree.moy.missions<- as.hms(0);Long.courrier <- 0
+  Moyen.courier <- 0; Troisieme.niveau <- 0;Missions.par.vols <- 0;Dechargement.tardif <- 0;Duree.Dechargement.tardif <- as.hms(0);
+  Inf.5min  <- 0;De.5min.a.15min  <- 0;De.15min.a.30min  <- 0;Sup.30min <- 0;
+  TME <-0;TMF<-0;TBF<-0;TBM<-0;GAL.C.15<-0;ZRL<-0;QSE<-0;TBG<-0;TRS<-0;S3N<-0;Autre <- 0
+  
+  
+  for(i in 1 : length(Types.de.vol))
+  { 
+    resta <- 0 
+    resrl.ctr <- 0
+    resrl.vrac <- 0
+    resqvrac <- 0
+    resctr <- 0 
+    resmd <- 0 
+    resdz <- 0 
+    resap <- 0 
+    res.touches <- 0
+    vr <- 0
+    vt <- 0
+    Lc <- 0
+    Mc <- 0
+    Tn <- 0
+    res.GEH <- 0
+    res.AF <- 0
+    nb.dech.tard <- 0 ;nb.dech.tard.inf5<- 0;nb.dech.tard.inf15min<- 0; nb.dech.tard.inf30min<- 0;nb.dech.tard.sup30min<- 0;duree.dechg.tard <- as.hms(0)
+    
+    miss1t <- 0; miss2t <- 0;miss3t <- 0; miss4t<-0
+    res.TME <-0;res.TMF<-0;res.TBF<-0;res.TBM<-0;res.GAL.C.TAPIS.15<-0;res.ZRL<-0;
+      res.QSE<-0;res.TBG<-0;res.TRS<-0;res.S3N<-0;res.Autre<-0;res.NA<-0;
+########Temps moyens
+      
+      
+      
+      Moy.missions.acceptees[i] <- as.hms(round(mean( DataX[DataX$Type.de.Vol == unique(data_new$Type.de.Vol)[i] , ]$Delai.accept.missions,
+                                                                                                       na.rm = TRUE ),0))
+      
+      Moy.depart.zec[i] <- as.hms(round(mean( DataX[DataX$Type.de.Vol == unique(data_new$Type.de.Vol)[i] , ]$Delai.depart.zec,
+                                                                                                       na.rm = TRUE ),0))
+      
+      Duree.moy.missions[i] <- as.hms(round(mean( DataX[DataX$Type.de.Vol == unique(data_new$Type.de.Vol)[i] , ]$Duree.de.tache,
+                                                                                                       na.rm = TRUE ),0))
+      
+      Temps.moy.trieurs[i] <-  as.hms(round(mean( DataX[DataX$Type.de.Vol == unique(data_new$Type.de.Vol)[i] , ]$Delai.de.dechargement,
+                                                                                                       na.rm = TRUE ),0))
+    
+      select.Type <- DataX[DataX$Type.de.Vol == as.character(Types.de.vol[i]) , ]
+   
+    
+    for(y in 1 : length(select.Type$Identifiant))
+      {
+
+########Nombre de vrac et CTR
+      
+        if(select.Type$Type.de.Tache[y] == "VRAC")
+          {
+            resqvrac = resqvrac + select.Type$Quantite.reelle[y]
+            
+            if( select.Type$Temps.de.Rapatriement[y] > select.Type$Temps.de.rapat.theo[y] &
+                                      is.na(select.Type$Temps.de.rapat.theo[y]) == FALSE){resrl.vrac = resrl.vrac +1} ##Nombre de retard livraison vrac
+          }else
+          {
+            resctr = resctr +select.Type$Quantite.reelle[y]
+            
+            if( select.Type$Temps.de.Rapatriement[y] > select.Type$Temps.de.rapat.theo[y] &
+                                      is.na(select.Type$Temps.de.rapat.theo[y]) == FALSE ){resrl.ctr = resrl.ctr +1} ##Nombre de retard livraison cont
+          }
+
+        if( is.na(select.Type$Trieurs[y]) == FALSE )
+                     {
+                        if(select.Type$Trieurs[y] == "E"|select.Type$Trieurs[y] == "TME" ){ res.TME = res.TME + select.Type$Quantite.reelle[y] }else
+                        if(select.Type$Trieurs[y] == "TMF"){ res.TMF = res.TMF + select.Type$Quantite.reelle[y] }else
+                        if(select.Type$Trieurs[y] == "F"|select.Type$Trieurs[y] == "TBF" ){ res.TBF = res.TBF + select.Type$Quantite.reelle[y] }else
+                        if(select.Type$Trieurs[y] == "M"|select.Type$Trieurs[y] == "TBM" ){ res.TBM = res.TBM + select.Type$Quantite.reelle[y] }else
+                        if(select.Type$Trieurs[y] == "GAL C TAPIS 15"){ res.GAL.C.TAPIS.15 = res.GAL.C.TAPIS.15 + select.Type$Quantite.reelle[y]}else
+                        if(select.Type$Trieurs[y] == "ZRL"){ res.ZRL = res.ZRL + select.Type$Quantite.reelle[y] }else
+                        if(select.Type$Trieurs[y] == "QSE"){ res.QSE = res.QSE + select.Type$Quantite.reelle[y] }else
+                        if(select.Type$Trieurs[y] == "TBG"){ res.TBG = res.TBG + select.Type$Quantite.reelle[y] }else
+                        if(select.Type$Trieurs[y] == "TRS"){ res.TRS = res.TRS + select.Type$Quantite.reelle[y] }else
+                        if(select.Type$Trieurs[y] == "S3N"){ res.S3N = res.S3N + select.Type$Quantite.reelle[y] }else{ res.Autre = res.Autre + DataX$Quantite.reelle[y] }  
+                     
+        }else{ res.NA = res.NA + select.Type$Quantite.reelle[y] }
+      
+########Regard par Missions
+      
+        if(y != length(select.Type$Identifiant) & select.Type$Date[y] == select.Type$Date[y + 1] &
+                                select.Type$Arrv.theor.avion[y] == select.Type$Arrv.theor.avion[y+1] &
+                                               select.Type$Arrive.zec[y] == select.Type$Arrive.zec[y+1] &            
+                                                  select.Type$Identifiant[y] == select.Type$Identifiant[y+1] &
+                                                  select.Type$Vol[y] == select.Type$Vol[y+1] & select.Type$PKG[y] == select.Type$PKG[y+1] )
+          {}else{
+                  
+                  select.miss <- select.Type[select.Type$Vol == select.Type$Vol[y] &
+                                         select.Type$Arrive.zec == select.Type$Arrive.zec[y] &
+                                         select.Type$Identifiant == select.Type$Identifiant[y] &
+                                         select.Type$Arrv.theor.avion == select.Type$Arrv.theor.avion[y] &
+                                         select.Type$Date == select.Type$Date[y] & select.Type$PKG == select.Type$PKG[y],]
+                       
+                    resmd = resmd +1
+               
+                    if(select.miss$Delai.arrv.bloc[1] > 0){resap = resap +1}
+                          
+                    if( min(select.miss$Delai.depart.zec) > max(select.miss$Depart.zec.theo)){resdz = resdz +1}
+                          
+                    if( length(unique (select.miss$Trieurs)) == "1" ){ miss1t = miss1t + 1 }else
+                      if ( length(unique (select.miss$Trieurs)) == "2" ){ miss2t = miss2t + 1 }else
+                        if ( length(unique (select.miss$Trieurs)) == "3" ){  miss3t = miss3t + 1 }else
+                          if ( length(unique (select.miss$Trieurs)) == "4" ){ miss4t = miss4t + 1}
+                          
+                  
+                  if(max(select.miss$Mise.a.dispo.relle) > max(select.miss$Mise.dispo.theo) & select.miss$DEJA.DISPO[1] == "NON" )
+                 {
+                   nb.dech.tard = nb.dech.tard + 1
+                   
+                   Delai.mise.dispo <- max(select.miss$Chargement.bagages) - max(select.miss$Arrive.zec)
+                
+                   duree.dechg.tard = duree.dechg.tard + Delai.mise.dispo
+                   
+                   if( Delai.mise.dispo <= as.hms("00:05:00") ){  nb.dech.tard.inf5 =  nb.dech.tard.inf5 + 1  }else 
+                     if (Delai.mise.dispo > as.hms("00:05:00") & Delai.mise.dispo <= as.hms("00:15:00")){nb.dech.tard.inf15min =  nb.dech.tard.inf15min + 1  }else
+                       if(Delai.mise.dispo > as.hms("00:15:00") & Delai.mise.dispo <= as.hms("00:30:00")){nb.dech.tard.inf30min =  nb.dech.tard.inf30min + 1  }else
+                       {nb.dech.tard.sup30min =  nb.dech.tard.sup30min + 1 }
+                   
+                 }
+                  
+          } 
+      
+      
+      if( y != length(select.Type$Identifiant) & select.Type$Date[y] == select.Type$Date[y+1] &
+                              select.Type$Arrv.theor.avion[y] == select.Type$Arrv.theor.avion[y+1] &
+                                    select.Type$Arrv.reel.avion[y] == select.Type$Arrv.reel.avion[y+1] &
+                                                                  select.Type$Vol[y] == select.Type$Vol[y+1]){}else
+                                                                  { 
+                                                                     vr = vr +1
+                                                                      if(str_detect(select.Type$Vol[y],"^AZ")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^AC")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^AY")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^B2")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^BA")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^BT")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^CX")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^EK")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^HY")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^JP")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^KC")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^KM")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^MD")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^OK")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^OS")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^OU")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^PS")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^SU")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^SV")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^TN")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^UU")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^WY")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^YM")== TRUE|
+                                                                         str_detect(select.Type$Vol[y],"^YY")== TRUE){res.GEH = res.GEH + 1 }else{ res.AF = res.AF + 1}
+                                                                  }
+      
+      
+      
+      
+    }
+    
+      
+      
+      
+    Taches.acceptees[i] <- length(select.Type$Identifiant)
+    Retard.livraison.vrac[i] <- resrl.vrac
+    Retard.livraison.ctr[i] <- resrl.ctr
+    Nb.de.ctr[i] <- resctr
+    Qt.de.vrac[i] <- resqvrac
+    Missions.declanchees[i] <- resmd
+    Mission.AB[i] <- resap
+    Retard.dept.zec[i] <- resdz
+    Mission.1.trieur[i] = miss1t 
+    Mission.2.trieurs[i] = miss2t 
+    Mission.3.trieurs[i] = miss3t 
+    Mission.4.trieurs[i] = miss4t
+    Dechargement.tardif[i] = nb.dech.tard
+    Inf.5min[i] = nb.dech.tard.inf5
+    De.5min.a.15min[i] = nb.dech.tard.inf15min
+    De.15min.a.30min[i] = nb.dech.tard.inf30min
+    Sup.30min[i] =nb.dech.tard.sup30min
+    Duree.Dechargement.tardif[i] = duree.dechg.tard
+    Vols.arrives.reels[i] <- vr
+    Vol.GEH[i] <- res.GEH
+    Vol.AF[i] <- res.AF
+    Missions.par.vols[i] <- round(Missions.declanchees[i] / Vols.arrives.reels[i],1)
+    TME[i]<- res.TME
+    TMF[i]<- res.TMF
+    TBF[i]<- res.TBF
+    TBM[i]<- res.TBM
+    GAL.C.15[i]<- res.GAL.C.TAPIS.15
+    ZRL[i]<- res.ZRL
+    QSE[i]<- res.QSE
+    TBG[i]<- res.TBG
+    TRS[i]<- res.TRS
+    S3N[i]<- res.S3N
+    Autre[i] <-    res.Autre +res.NA
+
+  }
+    recap <- data.frame(Types.de.vol,Taches.acceptees,Retard.livraison.vrac,Retard.livraison.ctr,Nb.de.ctr,Qt.de.vrac,Missions.declanchees
+                        ,Mission.AB,Retard.dept.zec,Vols.arrives.reels,Vol.GEH,Vol.AF,Missions.par.vols,Mission.1.trieur, Mission.2.trieurs,Mission.3.trieurs,
+                        Mission.4.trieurs,Moy.missions.acceptees,Moy.depart.zec,Dechargement.tardif,Inf.5min,De.5min.a.15min,De.15min.a.30min,Sup.30min,
+                        Duree.Dechargement.tardif,Temps.moy.trieurs,Duree.moy.missions,TME,TMF,TBF,TBM,ZRL,QSE,TBG,TRS,S3N,GAL.C.15,Autre)
+    
+    row.names(recap) = as.character(unique(x$Type.de.Vol))
+    return(recap)
+}
+
+##Analyse detaillée par typologies de bagages
+detail.typo <- function(x)
+{
+  Typologie <- c("R","T","L","1R","2R","1T","2T","P","TL","H","RTL","S","RL","RT")
+  TME <-0;TMF<-0;TBF<-0;TBM<-0;GAL.C.15<-0;ZRL<-0;QSE<-0;TBG<-0;TRS<-0;S3N<-0;Autre <- 0
+  Nb.de.ctr <-0 ; Qt.de.vrac<-0; Duree.moy.rapat.reel <- as.hms(0);Duree.moy.rapat.theo <- as.hms(0)
+  Taches.acceptees <- 0;
+  
+  
+    DataX <- x[order(x$Vol,x$Date,x$Arrv.reel.avion,x$Identifiant,x$X2nd.TOUR),]
+   
+    Nb.de.vols <- 0
+  
+    for(i in 1 : length(Typologie))
+    {
+      res.vol <- 0;resta <- 0
+      res.TME <-0;res.TMF<-0;res.TBF<-0;res.TBM<-0;res.GAL.C.TAPIS.15<-0;res.ZRL<-0;
+      res.QSE<-0;res.TBG<-0;res.TRS<-0;res.S3N<-0;res.Autre<-0;res.Ctr<-0;res.VRAC<-0;res.NA<-0;
+      
+      
+      Duree.moy.rapat.reel[i] <- as.hms(round(mean( DataX[DataX$Typologie == as.character(Typologie[i]), ]$Temps.de.Rapatriement,
+                                                                                                       na.rm = TRUE ),0))
+      Duree.moy.rapat.theo[i] <- as.hms(round(mean( DataX[DataX$Typologie == as.character(Typologie[i]), ]$Temps.de.rapat.theo,
+                                                                                                       na.rm = TRUE ),0))
+      
+
+      for(j in 1 : length(unique(DataX$Vol)))
+      {
+        
+          select.Vol <- DataX[DataX$Vol == unique(DataX$Vol)[j] ,]
+ 
+        
+           for(n in 1 : length(select.Vol$Vol))
+            {
+              if(select.Vol$Typologie[n] == as.character(Typologie[i]) &
+                            select.Vol$Quantite.reelle[n] > 0){ res.vol = res.vol + 1; break }
+            }
+          
+            
+      }
+      
+      for(n in 1 : length(DataX$Vol))
+            {
+                
+                if(DataX$Typologie[n] == as.character(Typologie[i]))
+                { 
+                  resta = resta + 1
+                  
+                  if( DataX$Type.de.Tache[n] == "CTR" ){ res.Ctr = res.Ctr + DataX$Quantite.reelle[n] }else
+                  { res.VRAC = res.VRAC + DataX$Quantite.reelle[n] }
+                  
+                   if( is.na(DataX$Trieurs[n]) == FALSE )
+                     {
+                        if(DataX$Trieurs[n] == "E"|DataX$Trieurs[n] == "TME" ){ res.TME = res.TME + DataX$Quantite.reelle[n] }else
+                        if(DataX$Trieurs[n] == "TMF"){ res.TMF = res.TMF + DataX$Quantite.reelle[n] }else
+                        if(DataX$Trieurs[n] == "F"|DataX$Trieurs[n] == "TBF" ){ res.TBF = res.TBF + DataX$Quantite.reelle[n] }else
+                        if(DataX$Trieurs[n] == "M"|DataX$Trieurs[n] == "TBM" ){ res.TBM = res.TBM + DataX$Quantite.reelle[n] }else
+                        if(DataX$Trieurs[n] == "GAL C TAPIS 15"){ res.GAL.C.TAPIS.15 = res.GAL.C.TAPIS.15 + DataX$Quantite.reelle[n]}else
+                        if(DataX$Trieurs[n] == "ZRL"){ res.ZRL = res.ZRL + DataX$Quantite.reelle[n] }else
+                        if(DataX$Trieurs[n] == "QSE"){ res.QSE = res.QSE + DataX$Quantite.reelle[n] }else
+                        if(DataX$Trieurs[n] == "TBG"){ res.TBG = res.TBG + DataX$Quantite.reelle[n] }else
+                        if(DataX$Trieurs[n] == "TRS"){ res.TRS = res.TRS + DataX$Quantite.reelle[n] }else
+                        if(DataX$Trieurs[n] == "S3N"){ res.S3N = res.S3N + DataX$Quantite.reelle[n] }else{ res.Autre = res.Autre + DataX$Quantite.reelle[n] }  
+                     
+                   }else{ res.NA = res.NA + DataX$Quantite.reelle[n] }
+                }
+            }
+            
+      Taches.acceptees[i] <- resta
+      Nb.de.vols[i] <- res.vol
+      Nb.de.ctr[i] <- res.Ctr
+      Qt.de.vrac[i]<- res.VRAC
+      TME[i]<- res.TME
+      TMF[i]<- res.TMF
+      TBF[i]<- res.TBF
+      TBM[i]<- res.TBM
+      GAL.C.15[i]<- res.GAL.C.TAPIS.15
+      ZRL[i]<- res.ZRL
+      QSE[i]<- res.QSE
+      TBG[i]<- res.TBG
+      TRS[i]<- res.TRS
+      S3N[i]<- res.S3N
+      Autre[i] <-    res.Autre +res.NA
+      
+    }
+      recap <- data.frame(Typologie,Nb.de.vols,Nb.de.ctr,Qt.de.vrac,TME,TMF,TBF,TBM,ZRL,QSE,TBG,TRS,S3N,GAL.C.15,Autre,Duree.moy.rapat.reel,Duree.moy.rapat.theo,Taches.acceptees)
+      row.names(recap) = as.character(Typologie)
+    return(recap)
+}
+
+##Detail du dimentionnement journalier
+Dim.jours <- function(x)
+{
+  Temps.action = as.hms(seq(as.numeric(min(x$Debut.vacation)) ,as.numeric(max(x$Fin.vacation)),by = 15*60))
+  
+  DataX <- x[order(x$Identifiant,x$Date,x$Vol,x$Arrv.reel.avion,x$Arrive.zec,x$Zone.Tampon,x$X2nd.TOUR,x$Duree.de.tache),]
+                            
+  
+  Agents.avec.Voltigeurs = 0
+  Agents.sans.Voltigeurs= 0
+  Agents.en.mission = 0
+  Agents.affectes = 0
+  Agents.vols.arrv.futur = 0
+  Agents.vols.en.traitement = 0
+  Agents.affectes.Lc = 0
+  Agents.affectes.Mc = 0
+  Agents.affectes.Tn = 0
+  Mission.en.cours = 0
+  Vol.en.traitement.reel.AA = 0
+  Long.courier = 0
+  Moyen.courier = 0
+  Troisieme.niveau = 0
+  Vol.en.traitement.theo.HA = 0
+  Vol.en.traitement.theo.AA = 0
+  Vol.en.traitement.theo.AF = 0
+  
+      
+      for(i in 1 : length(Temps.action))## parcourt temps d'action
+      {
+        
+          resad <- 0
+          resap <- 0
+          resam <- 0
+          resme <- 0
+          resr <- 0
+          rest <- 0
+          restAA <- 0
+          resaaf <- 0
+          Lc <- 0
+          Mc <- 0
+          Tn <- 0
+          A.f.Lc <- 0
+          A.f.Mc <- 0
+          A.f.Tn <- 0
+          res.vF <- 0
+          res.v.e.t <- 0
+          
+         for(j in 1 : length(unique(DataX$Identifiant)))
+          {
+               select.agents <- DataX[DataX$Identifiant == unique(DataX$Identifiant)[j],]
+          
+                  if(select.agents$Debut.vacation[1]- 60 <= Temps.action[i] & select.agents$Fin.vacation[1] - 15*60  > Temps.action[i])
+                  { 
+                    resad <- resad + 1
+                    
+                    if( select.agents$Voltigeurs[1] == "NON")
+                      { resap <- resap + 1}
+                    
+                  }
+                     
+                  Agents.avec.Voltigeurs[i] = resad 
+                  Agents.sans.Voltigeurs[i] =   resap
+      
+                for(k in 1 : length(select.agents$Identifiant)) ### toutes les taches de l'agent sélectioné
+                {
+                      if(k != length(select.agents$Identifiant) & select.agents$Arrive.zec[k] == select.agents$Arrive.zec[k+1] &
+                                    select.agents$Vol[k] == select.agents$Vol[k+1]& select.agents$Arrv.theor.avion[k] == select.agents$Arrv.theor.avion[k+1] ){}else
+                                      {
+                         
+                                        select.miss <- select.agents[select.agents$Vol == select.agents$Vol[k] &
+                                                                       select.agents$Arrive.zec == select.agents$Arrive.zec[k]& 
+                                                                       select.agents$Arrv.theor.avion == select.agents$Arrv.theor.avion[k],]
+                                  
+                                                      if(min(select.miss$Taches.accepte) <= Temps.action[i] &
+                                                         max(select.miss$Zone.Tampon) > Temps.action[i])
+                                                      { resme <- resme + 1}
+                                            
+                                       }
+                }
+               
+                
+              for(l in 1 : length(select.agents$Identifiant)) ### toutes les taches de l'agents sélectionés
+                {
+                  if(select.agents$Taches.accepte[l] <= Temps.action[i] & select.agents$Zone.Tampon[l] > Temps.action[i])
+                  {resam = resam +1 ; break}
+                } 
+                
+               for(n in 1 : length(select.agents$Identifiant)) ### toutes les taches de l'agents sélectionés
+                {
+                  if(select.agents$Taches.assigne[n] <= Temps.action[i] & select.agents$Zone.Tampon[n] > Temps.action[i])
+                  {
+                    resaaf = resaaf +1
+                    if(select.agents$Arrv.reel.avion[n] > Temps.action[i] &  select.agents$Zone.Tampon[n] > Temps.action[i])
+                      {res.vF = res.vF +1}else{res.v.e.t = res.v.e.t +1}
+                    if(select.agents$Type.de.Vol[n] == "Long courier"){ A.f.Lc =  A.f.Lc +1}else
+                    if(select.agents$Type.de.Vol[n] == "Moyen courier"){ A.f.Mc =  A.f.Mc +1}else{ A.f.Tn =  A.f.Tn + 1 }
+                    break
+                  }
+                } 
+               
+            }
+          Mission.en.cours[i] = resme
+          Agents.en.mission[i] = resam
+          Agents.affectes[i] = resaaf
+          Agents.vols.arrv.futur[i] = res.vF
+          Agents.vols.en.traitement[i] = res.v.e.t
+          Agents.affectes.Lc[i] = A.f.Lc
+          Agents.affectes.Mc[i] = A.f.Mc
+          Agents.affectes.Tn[i] = A.f.Tn
+
+          for(j in 1 : length(unique(DataX$Vol)))
+          {
+               select.vol <- DataX[DataX$Vol == unique(DataX$Vol)[j],]
+              
+               for (n in 1 : length(select.vol$Arrv.reel.avion))
+                 {
+                    if(select.vol$Arrv.reel.avion[n] <= Temps.action[i] &  max(select.vol$Zone.Tampon ) > Temps.action[i])
+                    {
+                      resr <- resr + 1 
+                      if(select.vol$Type.de.Vol[n] == "Long courier"){Lc = Lc +1}else
+                      if(select.vol$Type.de.Vol[n] == "Moyen courier"){Mc = Mc +1}else{Tn = Tn + 1 }
+                      break
+                    }
+  
+                  }
+
+                  
+                    if(is.na(max(select.vol$Duree.de.tache.theo))== FALSE &
+                       select.vol$Arrv.theor.avion[1] <= Temps.action[i] &
+                       select.vol$Arrv.theor.avion[1] + max(select.vol$Duree.de.tache.theo) > Temps.action[i])
+                    {rest <- rest + 1 }
+
+                  if(is.na(max(select.vol$Duree.de.tache.theo))== FALSE & select.vol$Arrv.reel.avion[1] <= Temps.action[i] &
+                  select.vol$Arrv.reel.avion[1] + max(select.vol$Duree.de.tache.theo) > Temps.action[i])
+                  {restAA <- restAA + 1 }
+
+             }
+
+          Vol.en.traitement.reel.AA[i] = resr
+          Vol.en.traitement.theo.HA[i] = rest
+          Vol.en.traitement.theo.AA[i] = restAA
+          Long.courier[i] = Lc
+          Moyen.courier[i] = Mc
+          Troisieme.niveau[i] = Tn
+
+      }
+    recap <- as.table(cbind(Agents.avec.Voltigeurs,Agents.sans.Voltigeurs,Mission.en.cours,Agents.en.mission,Agents.affectes,Agents.vols.arrv.futur,
+                            Agents.vols.en.traitement,Agents.affectes.Lc,Agents.affectes.Mc,Agents.affectes.Tn,Vol.en.traitement.reel.AA,Long.courier,Moyen.courier,
+                            Troisieme.niveau,Vol.en.traitement.theo.HA,Vol.en.traitement.theo.AA))
+    row.names(recap) = as.character(Temps.action)
+
+return(recap)
+}
+
+```
+
+
+
+```{r include=FALSE}
+data_new <- Rename.data(data_new) 
+data_new <- retype.data(data_new)
+data_new <- Erreur.ajust(data_new) 
+data_new <- Clean.data(data_new)
+data_new <- Create.new.variables(data_new,data_voltigeurs) 
+```
+
+#### **Presentation et description du jeux de données**
+
+La table représenté ce dessous nous donne un appercu detaillé des données. On peut dirrectement y voir apparaitre:
+
+- Le nombre de **Valeurs nulles** (q_Zeros) et son pourcentage(p_Zeros)
+
+- Le nombre de **Valeurs menquantes** (q_NA) et son pourcentage(p_NA)
+
+- Le nombre de **Valeurs infinies** (q_inf) et son pourcentage(p_infs)
+
+- Le **type** de variables : facteur, caractère, numéric, entier, etc......
+
+- Le **Nombre de valeurs uniques** qui donne une précision imédiat sur le nombre d'agents qui ont été declanché sur la semaine
+
+```{r include=FALSE}
+library(funModeling)
+
+variable.etudiees <- df_status(data_new)
+```
+
+```{r echo=FALSE}
+datatable(variable.etudiees, class = 'cell-border stripe', rownames = F, options = list(pageLength =  10, scrollX = T)) 
+
+```
+
+ 
+####  **Details de l'activité des agents** 
+
+Faire un detail par agents consiste simplement à determiner differents indicateurs afin de mieux comprendre le déroulé de lactivité.
+cela permet aussi d'avoir un appercu sur la charge de travail effectuée.
+
+```{r include=FALSE}
+detail.agents <- recap.agents(data_new) 
+debut_semaine <- unique(data_new$Date)[1]
+fin_semaine <- unique(data_new$Date)[7]
+Nb_agents <- length(detail.agents$Identifiant)
+
+```
+
+L'analyse ici portera sur la semaine du `r debut_semaine` au `r fin_semaine`. Ou nous avons déployé `r Nb_agents` agents pour couvrir l'activité.
+
+```{r echo=FALSE,fig.width = 6, fig.height = 5}
+
+  barplot(table(paste(detail.agents$Nom,detail.agents$Prenom),detail.agents$Jours.travailles),
+        yaxp= c(0,45,45),
+        xlab = "Nombre de Jours travaillés ",
+        main = "Répartition du nombre agents par jours travaillés",
+        ylab = "Nombre d'agents",
+        border = "white",
+        )
+
+```
+
+Le graphe ci dessus représente la répartition des agents en nombre de jours travaillés. 
+
+
+####  **Liste des agents ayants travaillés dans la semaines**
+
+```{r echo=FALSE}
+
+Nb.miss <- sum(detail.agents$Missions.effectuees)
+Nb.Tache <- sum(detail.agents$Taches.acceptees)
+Nombre.de.ctr <- sum(detail.agents$Nb.de.ctr)
+Nombre.de.vrac <- sum(detail.agents$Qt.de.vrac)
+P_retard.dept.zec <- paste(round((sum( detail.agents$Retard.dept.zec)/ sum(detail.agents$Taches.acceptees))*100,2),"%")
+P_decharg.tardif <- paste(round((sum( detail.agents$Dechargement.tardif)/ sum(detail.agents$Missions.effectuees))*100,2),"%")
+P_retard.livr.vrac <- paste(round((sum( detail.agents$Retard.livraison.vrac)/ sum(detail.agents$Qt.de.vrac))*100,2),"%")
+P_retard.livr.ctr <- paste(round((sum( detail.agents$Retard.livraison.ctr)/ sum(detail.agents$Nb.de.ctr))*100,2),"%")
+
+```
+
+Cette semaine, nous avons déployé `r Nb_agents` agents qui ont  éffectuées `r Nb.miss` missions.
+`r P_decharg.tardif` des missions étéient en dechargement tartif et nous n'avons eu que `r P_retard.livr.vrac` de retard livraison en vrac et `P_retard.livr.ctr` de retard livraison en conteneur.
+
+```{r echo=FALSE}
+datatable(detail.agents, class = 'cell-border stripe', filter = 'top', rownames = F, options = list(pageLength =  10, scrollX = T,lengthMenu = c( 10,20,30,60)))
+```
+
+
+```{r echo=FALSE}
+recap.voltigeurs <- data.frame(Nb_agents,Nb.miss,Nb.Tache,Nombre.de.ctr,Nombre.de.vrac,P_decharg.tardif,P_retard.dept.zec,P_retard.livr.vrac,P_retard.livr.ctr)
+colnames(recap.voltigeurs) = c("Nb.Agents","Nb.Missions","Nb.de.taches","Nombre.de.ctr","Nombre.de.vrac","Detachement.tardif",
+                               "R_dep.zec","R_.livr.vrac","R.livr.ctr")
+
+
+datatable(recap.voltigeurs, class = 'cell-border stripe', rownames = F, options = list(
+  dom = 't',
+  pageLength =  1, scrollX = T) )
+
+
+```
+
+Les données en tableau sont généralement facile à lire. néanmoins dans certains cas, une représentation graphique nous permet d'interpréter les résultats plus rapidement. 
+ci dessous vous trouverez la représentation graphique de la table des actifs proportionellementà leur nombre. elle permet de comprendre assez rapidement comment évolu le temps de productivité de l'éffectif dans l'ensemble. 
+
+#### **Représentation graphique de la table des actifs avec et sans voltigeurs voltigeurs**  
+
+```{r echo=FALSE}
+
+inf.15 <- length(detail.agents[ detail.agents$Actif.avec.Dt < 15 ,]$Actif.avec.Dt)
+De.15.a.30 <- length(detail.agents[ detail.agents$Actif.avec.Dt >= 15  & detail.agents$Actif.avec.Dt < 30,]$Actif.avec.Dt)
+De.30.a.45 <- length(detail.agents[ detail.agents$Actif.avec.Dt >= 30  & detail.agents$Actif.avec.Dt < 45,]$Actif.avec.Dt)
+De.45.a.60 <- length(detail.agents[ detail.agents$Actif.avec.Dt >= 45  & detail.agents$Actif.avec.Dt < 60,]$Actif.avec.Dt)
+De.60.a.75 <- length(detail.agents[ detail.agents$Actif.avec.Dt >= 60  & detail.agents$Actif.avec.Dt < 75,]$Actif.avec.Dt)
+De.75.a.80 <- length(detail.agents[ detail.agents$Actif.avec.Dt >= 75  & detail.agents$Actif.avec.Dt < 80,]$Actif.avec.Dt)
+sup.80 <- length(detail.agents[ detail.agents$Actif.avec.Dt >= 80 ,]$Actif.avec.Dt)
+
+recap.des.actifs <- as.table(cbind(inf.15,De.15.a.30,De.30.a.45,De.45.a.60,De.60.a.75,De.75.a.80,sup.80))
+colnames(recap.des.actifs) = c("-15%","15 - 30%","30 - 45%","45 - 60%","60 - 75%","75 - 80%","+80%")
+row.names(recap.des.actifs) = "Prop d'éffectif avec voltigeurs"
+
+tab1 <- prop.table( recap.des.actifs)*100 
+
+
+par(mfrow = c(1,2),cex = 0.65)
+{
+  barplot(tab1[,1:7], las = 2,
+          ylim = c(0,round(max(tab1),0)),
+          yaxp= c(0,round(max(tab1),0),round(max(tab1),0)),
+          col = rainbow(7)
+          )
+
+pie(tab1[1:7],labels  = c("-15%","15-30%","30-45%","45-60%","60-75%","","+80%"),
+            angle = 45, main = "effectif par temps d'activités", col = rainbow(7),
+                        radius = 0.9, clockwise = TRUE, lwd = 1, cex = 0.85,srt = 30)
+
+}
+  
+```
+
+La premiere partie de notre analyse etait en quelque sorte un point de vue microscopique de l'activité car elle nous donnait un detail de l'activité par agents.
+
+ce pendant, il y a `r Nb_agents` lignes à interpreter. Ce qui peut etre dificile à faire.
+
+C'est pour quoi, nous avons opter par la suite d'analyser la semaine d'activité  par plages horaire.
+
+une journée est divisé en 7 plages couvrant en moyenne entre 3 et 4 heures.
+
+
+
+## **Details de l'exploitation par plages horaires**
+
+Ceci n'est qu'un appercu des indicateurs exprimés par plages. vous trouverez la totalité du tableau dans le fichier excel en piece jouinte.
+
+```{r echo=FALSE}
+detail.plages <- recap.plages(data_new)
+```
+
+#### **Indicateur des temps**
+
+```{r echo=FALSE}
+temps.analy <- select(detail.plages,Plages,Debut.plage,Fin.plage,Moy.missions.acceptees,Moy.depart.zec,Temps.moy.trieurs,Duree.moy.missions)
+
+datatable(temps.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T),)
+```
+
+####  **Indicateur sur les quantités traitées**
+```{r echo=FALSE}
+
+charge.analy <- select(detail.plages,Plages,Vols.arrives.theoriques,Vols.arrives.reels,Taches.acceptees,Nb.de.ctr,Qt.de.vrac,Missions.declanchees,Nb.de.touches,Touches.par.vols)
+
+datatable(charge.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T))
+```
+
+#### **Indicateurs de performances**
+```{r echo=FALSE}
+perf.analy <- select(detail.plages,Plages,Missions.declanchees,Mission.AB,Dechargement.tardif,Retard.dept.zec,Retard.livraison.vrac,Retard.livraison.ctr)
+datatable(perf.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T))
+
+```
+
+#### **Répartition des missions dans les trieurs**
+```{r echo=FALSE}
+miss.analy <- select(detail.plages,Plages,Mission.1.trieur,Mission.2.trieurs,Mission.3.trieurs,Mission.4.trieurs)
+datatable(miss.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T))
+```
+
+#### **Type de vols traitées**
+```{r echo=FALSE}
+vol.analy <- select(detail.plages,Plages,Vols.arrives.reels,Long.courrier,Moyen.courier,Troisieme.niveau)
+datatable(vol.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T))
+```
+
+#### **Analyse des déchargement tardifs**
+```{r echo=FALSE}
+decharge.analy <- select(detail.plages,Plages,Dechargement.tardif,Inf.5min,De.5min.a.15min,De.15min.a.30min,Sup.30min,Duree.Dechargement.tardif)
+datatable(decharge.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T))
+```
+
+```{r echo=FALSE}
+Nb.vols <- sum(detail.plages$Vols.arrives.reels)
+P_decharg.tardif <- paste(round((sum(detail.plages$Dechargement.tardif)  / sum(detail.plages$Missions.declanchees))*100, 2),"%")
+Taches.par.vols <- sum(detail.plages$Taches.acceptees) / sum(detail.plages$Vols.arrives.reels)
+Touches.par.vol <- sum(detail.plages$Nb.de.touches) / sum(detail.plages$Vols.arrives.reels)
+P_missions.AB <- paste(round((sum(detail.plages$Mission.AB)  / sum(detail.plages$Missions.declanchees))*100, 2),"%")
+Nb.missions <- sum(detail.plages$Missions.declanchees)
+Nb.miss.par.vols <- round(sum(detail.plages$Missions.declanchees) / sum(detail.plages$Vols.arrives.reels),2)
+P_retard.liv.ctr <- paste(round((sum(detail.plages$Retard.livraison.ctr)  / sum(detail.plages$Nb.de.ctr))*100, 2),"%")
+P_retard.liv.vrac <- paste(round((sum(detail.plages$Retard.livraison.vrac)  / sum(detail.plages$Qt.de.vrac))*100, 2),"%")
+P_Lc <- paste(round((sum(detail.plages$Long.courrier)  / sum(detail.plages$Vols.arrives.reels))*100, 2),"%")
+P_Mc <- paste(round((sum(detail.plages$Moyen.courier)  / sum(detail.plages$Vols.arrives.reels))*100, 2),"%")
+P_Tn <- paste(round((sum(detail.plages$Troisieme.niveau)  / sum(detail.plages$Vols.arrives.reels))*100, 2),"%")
+P_M.1t <- paste(round((sum(detail.plages$Mission.1.trieur)  / sum(detail.plages$Missions.declanchees))*100, 2),"%")
+P_M.2t <- paste(round((sum(detail.plages$Mission.2.trieurs)  / sum(detail.plages$Missions.declanchees))*100, 2),"%")
+P_M.3t <- paste(round((sum(detail.plages$Mission.3.trieurs)  / sum(detail.plages$Missions.declanchees))*100, 2),"%")
+P_M.4t <- paste(round((sum(detail.plages$Mission.4.trieurs)  / sum(detail.plages$Missions.declanchees))*100, 2),"%")
+
+Prop.table <- data.frame(P_Lc,P_Mc,P_Tn,P_M.1t,P_M.2t,P_M.3t,P_M.4t,Nb.miss.par.vols,P_missions.AB,P_decharg.tardif,P_retard.liv.ctr,P_retard.liv.vrac)
+
+datatable(Prop.table, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  5, scrollX = T))
+
+```
+
+
+
+###  **Details de l'activitées par typologies**
+
+
+#### Typologie de vols
+
+```{r echo=FALSE}
+detail.type.vol<- recap.type.vol(data_new)
+```
+
+
+#### **Indicateur des temps**
+
+```{r echo=FALSE}
+temps.analy <- select(detail.type.vol,Types.de.vol,Moy.missions.acceptees,Moy.depart.zec,Temps.moy.trieurs,Duree.moy.missions)
+
+datatable(temps.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T),)
+```
+
+#### **Indicateur sur les quantités traitées**
+```{r echo=FALSE}
+charge.analy <- select(detail.type.vol,Types.de.vol,Vols.arrives.reels,Missions.declanchees,Nb.de.ctr,Qt.de.vrac,Missions.par.vols)
+datatable(charge.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T))
+```
+
+#### **Indicateurs de performances**
+```{r echo=FALSE}
+perf.analy <- select(detail.type.vol,Types.de.vol,Missions.declanchees,Mission.AB,Dechargement.tardif,Retard.dept.zec,Retard.livraison.vrac,Retard.livraison.ctr)
+datatable(perf.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T))
+
+```
+
+#### ** Répartition des missions dans les trieurs **
+```{r echo=FALSE}
+miss.analy <- select(detail.type.vol,Types.de.vol,Mission.1.trieur,Mission.2.trieurs,Mission.3.trieurs,Mission.4.trieurs)
+datatable(miss.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T))
+```
+
+
+#### **Analyse des déchargement tardifs**
+```{r echo=FALSE}
+decharge.analy <- select(detail.type.vol,Types.de.vol,Dechargement.tardif,Inf.5min,De.5min.a.15min,De.15min.a.30min,Sup.30min,Duree.Dechargement.tardif)
+datatable(decharge.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T))
+```
+
+#### **Analyse des quantitées traitées par trieurs **
+```{r echo=FALSE}
+decharge.analy <- select(detail.type.vol,Types.de.vol,Nb.de.ctr,Qt.de.vrac,TME,TMF,TBF,TBM,ZRL,QSE,TBG,TRS,S3N,GAL.C.15,Autre)
+datatable(decharge.analy, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  7, scrollX = T))
+```
+
+
+####  Typologie Bagages
+
+```{r echo=FALSE}
+detail.typo.bagages <- detail.typo(data_new)
+
+datatable(detail.typo.bagages, class = 'cell-border stripe', rownames = F, options = list(dom = 't',pageLength =  14, scrollX = T))
+
+```
+
+
+
+## II **Analyse journalière**
+
+
+####  **Representation graphique des agents par missions **
+
+```{r echo=FALSE}
+Jour1 <- data_new[data_new$Date == unique(data_new$Date)[1],]
+Jour2 <- data_new[data_new$Date == unique(data_new$Date)[2],]
+Jour3 <- data_new[data_new$Date == unique(data_new$Date)[3],]
+Jour4 <- data_new[data_new$Date == unique(data_new$Date)[4],]
+Jour5 <- data_new[data_new$Date == unique(data_new$Date)[5],]
+Jour6 <- data_new[data_new$Date == unique(data_new$Date)[6],]
+Jour7 <- data_new[data_new$Date == unique(data_new$Date)[7],]
+
+detail.agents.jour1 <- recap.agents(Jour1)
+detail.agents.jour2 <- recap.agents(Jour2)
+detail.agents.jour3 <- recap.agents(Jour3)
+detail.agents.jour4 <- recap.agents(Jour4)
+detail.agents.jour5 <- recap.agents(Jour5)
+detail.agents.jour6 <- recap.agents(Jour6)
+detail.agents.jour7 <- recap.agents(Jour7)
+
+
+detail.agents.jour.sv1 <- detail.agents.jour1[detail.agents.jour1$Voltigeurs == "NON",]
+detail.agents.jour.sv2 <- detail.agents.jour2[detail.agents.jour2$Voltigeurs == "NON",]
+detail.agents.jour.sv3 <- detail.agents.jour3[detail.agents.jour3$Voltigeurs == "NON",]
+detail.agents.jour.sv4 <- detail.agents.jour4[detail.agents.jour4$Voltigeurs == "NON",]
+detail.agents.jour.sv5 <- detail.agents.jour5[detail.agents.jour5$Voltigeurs == "NON",]
+detail.agents.jour.sv6 <- detail.agents.jour6[detail.agents.jour6$Voltigeurs == "NON",]
+detail.agents.jour.sv7 <- detail.agents.jour7[detail.agents.jour7$Voltigeurs == "NON",]
+
+
+Nb.mission1 <- data.frame(paste(detail.agents.jour1$Nom, detail.agents.jour1$Prenom),detail.agents.jour1$Missions.effectuees,detail.agents.jour1$Voltigeurs)
+names(Nb.mission1) <- c("Nom.des.agents","Nb.de.missions","Voltigeurs")
+
+Nb.mission2 <- data.frame(paste(detail.agents.jour2$Nom, detail.agents.jour2$Prenom),detail.agents.jour2$Missions.effectuees,detail.agents.jour2$Voltigeurs)
+names(Nb.mission2) <- c("Nom.des.agents","Nb.de.missions","Voltigeurs")
+
+Nb.mission3 <- data.frame(paste(detail.agents.jour3$Nom, detail.agents.jour3$Prenom),detail.agents.jour3$Missions.effectuees,detail.agents.jour3$Voltigeurs)
+names(Nb.mission3) <- c("Nom.des.agents","Nb.de.missions","Voltigeurs")
+
+Nb.mission4 <- data.frame(paste(detail.agents.jour4$Nom, detail.agents.jour4$Prenom),detail.agents.jour4$Missions.effectuees,detail.agents.jour4$Voltigeurs)
+names(Nb.mission4) <- c("Nom.des.agents","Nb.de.missions","Voltigeurs")
+
+Nb.mission5 <- data.frame(paste(detail.agents.jour5$Nom, detail.agents.jour5$Prenom),detail.agents.jour5$Missions.effectuees,detail.agents.jour5$Voltigeurs)
+names(Nb.mission5) <- c("Nom.des.agents","Nb.de.missions","Voltigeurs")
+
+Nb.mission6 <- data.frame(paste(detail.agents.jour6$Nom, detail.agents.jour6$Prenom),detail.agents.jour6$Missions.effectuees,detail.agents.jour6$Voltigeurs)
+names(Nb.mission6) <- c("Nom.des.agents","Nb.de.missions","Voltigeurs")
+
+Nb.mission7 <- data.frame(paste(detail.agents.jour7$Nom, detail.agents.jour7$Prenom),detail.agents.jour7$Missions.effectuees,detail.agents.jour7$Voltigeurs)
+names(Nb.mission7) <- c("Nom.des.agents","Nb.de.missions","Voltigeurs")
+
+
+
+  barplot(table(Nb.mission1[,1:2]),
+        yaxp= c(0,25,25),
+        xlab = "Nombre de missions effectuées ",
+        main = paste("Repartition des agents par missions le ",unique(data_new$Date)[1]),
+        ylab = "Nombre d'agents",
+        col  = Nb.mission1[,3],
+        border = "white")# Permet d'avoir une graduation des axes) 
+legend("topleft",c("Non voltigeurs","Voltigeurs"),col = c("black","red"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+
+par(mfrow = c(2,2))
+{
+  barplot(table(Nb.mission2[,1:2]),
+        yaxp= c(0,25,25),
+        xlab = "Nombre de missions effectuées ",
+        main = unique(data_new$Date)[2],
+        ylab = "Nombre d'agents",
+        col  = Nb.mission2[,3],
+        border = "white")# Permet d'avoir une graduation des axes) 
+legend("topleft",c("Non voltigeurs","Voltigeurs"),col = c("black","red"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+
+ barplot(table(Nb.mission3[,1:2]),
+        yaxp= c(0,25,25),
+        xlab = "Nombre de missions effectuées ",
+        main = unique(data_new$Date)[3],
+        ylab = "Nombre d'agents",
+        col  = Nb.mission3[,3],
+        border = "white")# Permet d'avoir une graduation des axes) 
+legend("topleft",c("Non voltigeurs","Voltigeurs"),col = c("black","red"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+
+  barplot(table(Nb.mission4[,1:2]),
+        yaxp= c(0,25,25),
+        xlab = "Nombre de missions effectuées ",
+        main = unique(data_new$Date)[4],
+        ylab = "Nombre d'agents",
+        col  = Nb.mission4[,3],
+        border = "white")# Permet d'avoir une graduation des axes) 
+legend("topleft",c("Non voltigeurs","Voltigeurs"),col = c("black","red"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+
+  barplot(table(Nb.mission5[,1:2]),
+        yaxp= c(0,25,25),
+        xlab = "Nombre de missions effectuées ",
+        main = unique(data_new$Date)[5],
+        ylab = "Nombre d'agents",
+        col  = Nb.mission5[,3],
+        border = "white")# Permet d'avoir une graduation des axes) 
+legend("topleft",c("Non voltigeurs","Voltigeurs"),col = c("black","red"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+
+}
+par(mfrow = c(2,2))
+{
+barplot(table(Nb.mission6[,1:2]),
+        yaxp= c(0,25,25),
+        xlab = "Nombre de missions effectuées ",
+        main = unique(data_new$Date)[6],
+        ylab = "Nombre d'agents",
+        col  = Nb.mission6[,3],
+        border = "white")# Permet d'avoir une graduation des axes) 
+legend("topleft",c("Non voltigeurs","Voltigeurs"),col = c("black","red"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+
+
+
+    barplot(table(Nb.mission7[,1:2]),
+        yaxp= c(0,25,25),
+        xlab = "Nombre de missions effectuées ",
+        main = unique(data_new$Date)[7],
+        ylab = "Nombre d'agents",
+        col  = Nb.mission7[,3],
+        border = "white")# Permet d'avoir une graduation des axes) 
+legend("topleft",c("Non voltigeurs","Voltigeurs"),col = c("black","red"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+}
+
+
+```
+
+
+#### **Missions et taches éffectuées**
+
+
+```{r echo=FALSE}
+
+par(mfrow = c(1,3))
+{
+
+    boxplot(detail.agents.jour1$Missions.effectuees ~ detail.agents.jour1$Voltigeurs,
+            main = "Répartition des missions éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de missions"
+            
+             )
+    boxplot( detail.agents.jour1$Taches.acceptees ~ detail.agents.jour1$Voltigeurs,
+            main = "Répartition des taches éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de taches"
+             
+             )
+       boxplot(detail.agents.jour1$Vols.traites ~ detail.agents.jour1$Voltigeurs,
+            main = "Répartition des vols tratés ",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de Vols traités"
+            
+             )
+
+
+}
+
+# summary(detail.agents.jour1$Missions.effectuees,digits = 4)
+# summary(detail.agents.jour1$Taches.acceptees,digits = 4)
+# summary(detail.agents.jour1$Vols.traites,digits = 4)
+
+
+par(mfrow = c(1,3))
+{
+
+    boxplot(detail.agents.jour2$Missions.effectuees ~ detail.agents.jour2$Voltigeurs,
+            main = "Répartition des missions éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de missions"
+            
+             )
+    boxplot( detail.agents.jour2$Taches.acceptees ~ detail.agents.jour2$Voltigeurs,
+            main = "Répartition des taches éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de taches"
+             
+             )
+       boxplot(detail.agents.jour2$Vols.traites ~ detail.agents.jour2$Voltigeurs,
+            main = "Répartition des vols tratés ",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de Vols traités"
+            
+             )
+
+
+}
+
+# summary(detail.agents.jour2$Missions.effectuees,digits = 4)
+# summary(detail.agents.jour2$Taches.acceptees,digits = 4)
+# summary(detail.agents.jour2$Vols.traites,digits = 4)
+
+
+par(mfrow = c(1,3))
+{
+
+    boxplot(detail.agents.jour3$Missions.effectuees ~ detail.agents.jour3$Voltigeurs,
+            main = "Répartition des missions éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de missions"
+            
+             )
+    boxplot( detail.agents.jour3$Taches.acceptees ~ detail.agents.jour3$Voltigeurs,
+            main = "Répartition des taches éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de taches"
+             
+             )
+       boxplot(detail.agents.jour3$Vols.traites ~ detail.agents.jour3$Voltigeurs,
+            main = "Répartition des vols tratés ",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de Vols traités"
+            
+             )
+
+
+}
+
+# summary(detail.agents.jour3$Missions.effectuees,digits = 4)
+# summary(detail.agents.jour3$Taches.acceptees,digits = 4)
+# summary(detail.agents.jour3$Vols.traites,digits = 4)
+
+par(mfrow = c(1,3))
+{
+
+    boxplot(detail.agents.jour4$Missions.effectuees ~ detail.agents.jour4$Voltigeurs,
+            main = "Répartition des missions éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de missions"
+            
+             )
+    boxplot( detail.agents.jour4$Taches.acceptees ~ detail.agents.jour4$Voltigeurs,
+            main = "Répartition des taches éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de taches"
+             
+             )
+       boxplot(detail.agents.jour4$Vols.traites ~ detail.agents.jour4$Voltigeurs,
+            main = "Répartition des vols tratés ",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de Vols traités"
+            
+             )
+
+
+}
+
+# summary(detail.agents.jour4$Missions.effectuees,digits = 4)
+# summary(detail.agents.jour4$Taches.acceptees,digits = 4)
+# summary(detail.agents.jour4$Vols.traites,digits = 4)
+
+par(mfrow = c(1,3))
+{
+
+    boxplot(detail.agents.jour5$Missions.effectuees ~ detail.agents.jour5$Voltigeurs,
+            main = "Répartition des missions éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de missions"
+            
+             )
+    boxplot( detail.agents.jour5$Taches.acceptees ~ detail.agents.jour5$Voltigeurs,
+            main = "Répartition des taches éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de taches"
+             
+             )
+       boxplot(detail.agents.jour5$Vols.traites ~ detail.agents.jour5$Voltigeurs,
+            main = "Répartition des vols tratés ",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de Vols traités"
+            
+             )
+
+
+}
+
+# summary(detail.agents.jour5$Missions.effectuees,digits = 4)
+# summary(detail.agents.jour5$Taches.acceptees,digits = 4)
+# summary(detail.agents.jour5$Vols.traites,digits = 4)
+
+
+par(mfrow = c(1,3))
+{
+
+    boxplot(detail.agents.jour6$Missions.effectuees ~ detail.agents.jour6$Voltigeurs,
+            main = "Répartition des missions éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de missions"
+            
+             )
+    boxplot( detail.agents.jour6$Taches.acceptees ~ detail.agents.jour6$Voltigeurs,
+            main = "Répartition des taches éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de taches"
+             
+             )
+       boxplot(detail.agents.jour6$Vols.traites ~ detail.agents.jour6$Voltigeurs,
+            main = "Répartition des vols tratés ",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de Vols traités"
+            
+             )
+
+
+}
+
+# summary(detail.agents.jour6$Missions.effectuees,digits = 4)
+# summary(detail.agents.jour6$Taches.acceptees,digits = 4)
+# summary(detail.agents.jour6$Vols.traites,digits = 4)
+
+
+par(mfrow = c(1,3))
+{
+
+    boxplot(detail.agents.jour7$Missions.effectuees ~ detail.agents.jour7$Voltigeurs,
+            main = "Répartition des missions éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de missions"
+            
+             )
+    boxplot( detail.agents.jour7$Taches.acceptees ~ detail.agents.jour7$Voltigeurs,
+            main = "Répartition des taches éffectuées",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de taches"
+             
+             )
+       boxplot(detail.agents.jour7$Vols.traites ~ detail.agents.jour7$Voltigeurs,
+            main = "Répartition des vols tratés ",
+            col = c("pink","yellow"),
+            xlab = "Voltigeurs",
+            ylab = "Nombre de Vols traités"
+            
+             )
+
+
+}
+
+
+# summary(detail.agents.jour7$Missions.effectuees,digits = 4)
+# summary(detail.agents.jour7$Taches.acceptees,digits = 4)
+# summary(detail.agents.jour7$Vols.traites,digits = 4)
+```
+
+
+On remarque ici que la répartition des vols traités et c'elle des missions éffectuées est senciblement égale. Deplus,  
+
+- La valeur centrale du graphique est la médiane (il existe autant de valeur supérieures qu’inférieures à cette valeur dans l’échantillon).
+
+- Les bords du rectangle sont les quartiles (Pour le bord inférieur, un quart des observations ont des valeurs plus petites et trois quart ont des valeurs plus grandes, le bord supérieur suit le même raisonnement).
+
+- Les extrémités des moustaches sont calculées en utilisant 1.5 fois  la distance entre le 1er et le 3ème quartile appelé (l’espace interquartile).
+
+Les valeurs à l’extérieur des moustaches sont représentées par des points. Ce sont des valleurs extraimes qui doivent etre étudiées plus en detail.
+
+### **Graphe de dimentionement**
+
+```{r echo=FALSE, cache=T}
+
+detail.dim <- Dim.jours(Jour1)
+repapj1 <- kable(detail.dim)
+
+  c <- barplot(t(detail.dim[,c(5,3,11)]),
+             border = "black",
+             beside = TRUE,
+             xlab = as.character(Jour1$Date[1]),
+             ylab = "Effectif",
+             col =c("#FFCC33","grey","#00CCFF"),
+             las = 2,
+             width = 0.5,
+             cex.axis = 0.65,
+             cex.names = 0.69,
+             yaxp = c(0,max(detail.dim[,1]),max(detail.dim[,1])),
+             ylim = c(0,max(detail.dim[,1])+3))
+legend("topright",colnames(detail.dim[,c(5,3,11)]),col = c("#FFCC33","grey","#00CCFF"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+lines(x = t(c[1,]) , y = t(detail.dim[,1]),col = "#000000")
+lines(x = t(c[1,]) , y = t(detail.dim[,2]),col = "blue")
+
+
+
+dim.recap <- rbind(detail.dim[,1],detail.dim[,5],detail.dim[,7],detail.dim[,6],detail.dim[,4],detail.dim[,3],detail.dim[,11],detail.dim[,12],detail.dim[,13],
+                   detail.dim[,14])
+row.names(dim.recap) =  c("Agents disponibles","Agents affectes","Agents.vols.en.traitement","Agents.vols.arrv.futur","Agents en missions",
+                          "Missions en cours",
+                          "vols en traitement reels ","Long.courier","Moyen.courier","Troisieme.niveau")
+
+write.csv2(dim.recap, file = paste("Dim.recap_",as.character(Jour1$Date[1]),".csv"), col.names = T,row.names = T)
+
+
+```
+
+
+
+
+```{r echo=FALSE, cache=T}
+detail.dim <- Dim.jours(Jour2)
+repapj2 <- kable(detail.dim)
+
+  c <- barplot(t(detail.dim[,c(5,3,11)]),
+             border = "black",
+             beside = TRUE,
+             xlab = as.character(Jour2$Date[1]),
+             ylab = "Effectif",
+             col =c("#FFCC33","grey","#00CCFF"),
+             las = 2,
+             width = 0.5,
+             cex.axis = 0.65,
+             cex.names = 0.69,
+             yaxp = c(0,max(detail.dim[,1]),max(detail.dim[,1])),
+             ylim = c(0,max(detail.dim[,1])+3))
+legend("topright",colnames(detail.dim[,c(5,3,11)]),col = c("#FFCC33","grey","#00CCFF"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+lines(x = t(c[1,]) , y = t(detail.dim[,1]),col = "#000000")
+lines(x = t(c[1,]) , y = t(detail.dim[,2]),col = "blue")
+
+```
+
+
+```{r echo=FALSE, cache=T}
+detail.dim <- Dim.jours(Jour3)
+repapj3 <- kable(detail.dim)
+
+  c <- barplot(t(detail.dim[,c(5,3,11)]),
+             border = "black",
+             beside = TRUE,
+             xlab = as.character(Jour3$Date[1]),
+             ylab = "Effectif",
+             col =c("#FFCC33","grey","#00CCFF"),
+             las = 2,
+             width = 0.5,
+             cex.axis = 0.65,
+             cex.names = 0.69,
+             yaxp = c(0,max(detail.dim[,1]),max(detail.dim[,1])),
+             ylim = c(0,max(detail.dim[,1])+3))
+legend("topright",colnames(detail.dim[,c(5,3,11)]),col = c("#FFCC33","grey","#00CCFF"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+lines(x = t(c[1,]) , y = t(detail.dim[,1]),col = "#000000")
+lines(x = t(c[1,]) , y = t(detail.dim[,2]),col = "blue")
+
+```
+
+
+
+```{r echo=FALSE, cache=T}
+detail.dim <- Dim.jours(Jour4)
+repapj4 <- kable(detail.dim)
+
+  c <- barplot(t(detail.dim[,c(5,3,11)]),
+             border = "black",
+             beside = TRUE,
+             xlab = as.character(Jour4$Date[1]),
+             ylab = "Effectif",
+             col =c("#FFCC33","grey","#00CCFF"),
+             las = 2,
+             width = 0.5,
+             cex.axis = 0.65,
+             cex.names = 0.69,
+             yaxp = c(0,max(detail.dim[,1]),max(detail.dim[,1])),
+             ylim = c(0,max(detail.dim[,1])+3))
+legend("topright",colnames(detail.dim[,c(5,3,11)]),col = c("#FFCC33","grey","#00CCFF"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+lines(x = t(c[1,]) , y = t(detail.dim[,1]),col = "#000000")
+lines(x = t(c[1,]) , y = t(detail.dim[,2]),col = "blue")
+
+```
+
+```{r echo=FALSE, cache=T}
+detail.dim <- Dim.jours(Jour5)
+repapj5 <- kable(detail.dim)
+
+  c <- barplot(t(detail.dim[,c(5,3,11)]),
+             border = "black",
+             beside = TRUE,
+             xlab = as.character(Jour5$Date[1]),
+             ylab = "Effectif",
+             col =c("#FFCC33","grey","#00CCFF"),
+             las = 2,
+             width = 0.5,
+             cex.axis = 0.65,
+             cex.names = 0.69,
+             yaxp = c(0,max(detail.dim[,1]),max(detail.dim[,1])),
+             ylim = c(0,max(detail.dim[,1])+3))
+legend("topright",colnames(detail.dim[,c(5,3,11)]),col = c("#FFCC33","grey","#00CCFF"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+lines(x = t(c[1,]) , y = t(detail.dim[,1]),col = "#000000")
+lines(x = t(c[1,]) , y = t(detail.dim[,2]),col = "blue")
+
+```
+
+```{r echo=FALSE, cache=T}
+detail.dim <- Dim.jours(Jour6)
+repapj6 <- kable(detail.dim)
+
+  c <- barplot(t(detail.dim[,c(5,3,11)]),
+             border = "black",
+             beside = TRUE,
+             xlab = as.character(Jour6$Date[1]),
+             ylab = "Effectif",
+             col =c("#FFCC33","grey","#00CCFF"),
+             las = 2,
+             width = 0.5,
+             cex.axis = 0.65,
+             cex.names = 0.69,
+             yaxp = c(0,max(detail.dim[,1]),max(detail.dim[,1])),
+             ylim = c(0,max(detail.dim[,1])+3))
+legend("topright",colnames(detail.dim[,c(5,3,11)]),col = c("#FFCC33","grey","#00CCFF"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+lines(x = t(c[1,]) , y = t(detail.dim[,1]),col = "#000000")
+lines(x = t(c[1,]) , y = t(detail.dim[,2]),col = "blue")
+
+```
+
+```{r echo=FALSE, cache=T}
+detail.dim <- Dim.jours(Jour7)
+repapj7 <- kable(detail.dim)
+
+  c <- barplot(t(detail.dim[,c(5,3,11)]),
+             border = "black",
+             beside = TRUE,
+             xlab = as.character(Jour7$Date[1]),
+             ylab = "Effectif",
+             col =c("#FFCC33","grey","#00CCFF"),
+             las = 2,
+             width = 0.5,
+             cex.axis = 0.65,
+             cex.names = 0.69,
+             yaxp = c(0,max(detail.dim[,1]),max(detail.dim[,1])),
+             ylim = c(0,max(detail.dim[,1])+3))
+legend("topright",colnames(detail.dim[,c(5,3,11)]),col = c("#FFCC33","grey","#00CCFF"),lwd = 7, bty = "n",ncol = 1,cex = 1)
+lines(x = t(c[1,]) , y = t(detail.dim[,1]),col = "#000000")
+lines(x = t(c[1,]) , y = t(detail.dim[,2]),col = "blue")
+
+```
+
+
+
+
+
+
+
+#### **classification des vols par compagnies**
+
+
+```{r echo=FALSE}
+detail.vol.jour1 <- recap.type.vol(Jour1)
+detail.vol.jour2 <- recap.type.vol(Jour2)
+detail.vol.jour3 <- recap.type.vol(Jour3)
+detail.vol.jour4 <- recap.type.vol(Jour4)
+detail.vol.jour5 <- recap.type.vol(Jour5)
+detail.vol.jour6 <- recap.type.vol(Jour6)
+detail.vol.jour7 <- recap.type.vol(Jour7)
+
+
+
+Nb.Vol.GEH <- cbind(sum (detail.vol.jour1$Vol.GEH),
+                    sum (detail.vol.jour2$Vol.GEH),
+                    sum (detail.vol.jour3$Vol.GEH),
+                    sum (detail.vol.jour4$Vol.GEH),
+                    sum (detail.vol.jour5$Vol.GEH),
+                    sum (detail.vol.jour6$Vol.GEH),
+                    sum (detail.vol.jour7$Vol.GEH))
+
+Nb.vol.AF <- cbind(sum (detail.vol.jour1$Vol.AF),
+                    sum (detail.vol.jour2$Vol.AF),
+                    sum (detail.vol.jour3$Vol.AF),
+                    sum (detail.vol.jour4$Vol.AF),
+                    sum (detail.vol.jour5$Vol.AF),
+                    sum (detail.vol.jour6$Vol.AF),
+                    sum (detail.vol.jour7$Vol.AF))
+
+table.recap <- rbind(Nb.Vol.GEH,Nb.vol.AF)
+
+colnames(table.recap) = c(as.character(unique(data_new$Date)[1]),
+                          as.character(unique(data_new$Date)[2]),
+                          as.character(unique(data_new$Date)[3]),
+                          as.character(unique(data_new$Date)[4]),
+                          as.character(unique(data_new$Date)[5]),
+                          as.character(unique(data_new$Date)[6]),
+                          as.character(unique(data_new$Date)[7]))
+
+row.names(table.recap) = c("Nb.Vol.GEH","Nb.vol.AF")
+
+datatable(table.recap, class = 'cell-border stripe', options = list(dom = 't',pageLength =  7, scrollX = T))
+```
+
+
+
